@@ -42,6 +42,17 @@ async def reset_dut(dut, protocol_select=0):
     await ClockCycles(dut.clk, 5)
 
 
+async def drive_uio_lines(dut, value, settle):
+    # Sampling helpers may leave their caller in the final ReadOnly phase of a
+    # timestep.  Advance to the falling clock edge before driving so the write
+    # always happens in a new, writable simulator phase and is stable before
+    # the DUT samples it on the next rising edge.
+    await FallingEdge(dut.clk)
+    dut.uio_in.value = value
+    await ReadWrite()
+    await ClockCycles(dut.clk, settle)
+
+
 async def set_i2c_lines(dut, sda, scl, settle=3):
     value = 0xFF
     if not sda:
@@ -49,9 +60,7 @@ async def set_i2c_lines(dut, sda, scl, settle=3):
     if not scl:
         value &= ~(1 << I2C_SCL_PIN)
 
-    await ReadWrite()
-    dut.uio_in.value = value
-    await ClockCycles(dut.clk, settle)
+    await drive_uio_lines(dut, value, settle)
 
 
 async def i2c_start(dut):
@@ -88,9 +97,7 @@ async def set_spi_lines(dut, sclk, mosi, cs, settle=3):
         if not enabled:
             value &= ~(1 << index)
 
-    await ReadWrite()
-    dut.uio_in.value = value
-    await ClockCycles(dut.clk, settle)
+    await drive_uio_lines(dut, value, settle)
 
 
 async def spi_transaction(dut, value):
@@ -192,7 +199,6 @@ async def i2c_target_acknowledges_address_and_data(dut):
     await i2c_send_byte(dut, 0x5A)
     await i2c_ack_cycle(dut)
 
-    await ReadOnly()
     assert int(dut.uo_out.value) == 0x5A
     assert not (int(dut.uio_oe.value) & (1 << I2C_SDA_PIN))
 
