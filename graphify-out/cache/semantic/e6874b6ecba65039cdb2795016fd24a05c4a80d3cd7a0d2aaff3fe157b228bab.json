@@ -1,0 +1,1 @@
+{"nodes": [{"id": "github_workflows_fpga", "label": "CI Workflow: fpga (ICE40UP5K bitstream)", "file_type": "document", "source_file": ".github/workflows/fpga.yaml", "source_location": null, "source_url": null, "captured_at": null, "author": null, "contributor": null}], "edges": [], "hyperedges": []}

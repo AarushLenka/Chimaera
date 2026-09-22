@@ -3,7 +3,13 @@
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, FallingEdge, ReadOnly, with_timeout
+from cocotb.triggers import (
+    ClockCycles,
+    FallingEdge,
+    ReadOnly,
+    ReadWrite,
+    with_timeout,
+)
 
 
 CLOCK_NS = 20
@@ -23,11 +29,15 @@ def pin(value, index):
 
 
 async def reset_dut(dut, protocol_select=0):
+    await ReadWrite()
+
     dut.ena.value = 1
     dut.ui_in.value = protocol_select
     dut.uio_in.value = 0xFF
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 5)
+
+    await ReadWrite()
     dut.rst_n.value = 1
     await ClockCycles(dut.clk, 5)
 
@@ -38,6 +48,8 @@ async def set_i2c_lines(dut, sda, scl, settle=3):
         value &= ~(1 << I2C_SDA_PIN)
     if not scl:
         value &= ~(1 << I2C_SCL_PIN)
+
+    await ReadWrite()
     dut.uio_in.value = value
     await ClockCycles(dut.clk, settle)
     await ReadOnly()
@@ -74,6 +86,8 @@ async def set_spi_lines(dut, sclk, mosi, cs, settle=3):
     for enabled, index in ((sclk, SPI_SCLK_PIN), (mosi, SPI_MOSI_PIN), (cs, SPI_CS_PIN)):
         if not enabled:
             value &= ~(1 << index)
+
+    await ReadWrite()
     dut.uio_in.value = value
     await ClockCycles(dut.clk, settle)
     await ReadOnly()

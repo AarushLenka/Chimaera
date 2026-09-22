@@ -94,3 +94,13 @@ or timing result. The local cocotb command could not run because `cocotb-config`
 is not installed, so the CI cocotb result remains outstanding. The temporary
 bootstrap selector and fixed demo values need Hausen's confirmation before this
 checkpoint is treated as a final Phase 4 decision.
+
+## 2026-09-22 — Repair cocotb simulator-phase writes
+
+The first CI run of the Phase 4 tests failed before exercising I2C or SPI: their
+helpers ended in `ReadOnly`, then assigned the next bus value while the simulator
+was still in that read-only phase. The repair imports `ReadWrite` and enters it
+before reset, I2C, and SPI input assignments; output checks remain explicitly in
+`ReadOnly`. Python syntax and the dependency-free Phase 4 smoke test pass after
+the repair. A fresh CI run is still needed to verify both RTL and gate-level
+jobs, since cocotb and the PDK are not installed locally.

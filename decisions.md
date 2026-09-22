@@ -42,6 +42,14 @@ Phase 2 program/configuration choices, not the final program-memory encoding.
 **Consequences:** The Phase 4 demonstrations are deterministic and testable, and Port B pin ownership is now explicit. The bootstrap selector and fixed demo values are temporary and must be replaced or confirmed when the Phase 5 loader is designed; they are not claimed as the final v1 configuration interface.
 **Status:** proposed
 
+## 2026-09-22 — Make cocotb bus writes phase-safe
+
+**Context:** The RTL and gate-level cocotb jobs failed when I2C/SPI helpers assigned to DUT inputs after awaiting `ReadOnly`; cocotb correctly rejected those writes as occurring outside a writable simulator phase.
+**Decision:** Enter `ReadWrite` before every I2C/SPI bus assignment and before reset input setup/release, while retaining `ReadOnly` for output checks after settling clocks.
+**Alternatives considered:** Removing `ReadOnly` would hide the scheduling boundary and make checks race-prone. Moving all checks to arbitrary delays would be less explicit and less portable between RTL and gate-level simulators.
+**Consequences:** The same testbench can drive RTL and gate-level DUTs without illegal-phase writes; CI must rerun to confirm both jobs pass.
+**Status:** confirmed by Hausen
+
 ## 2026-09-22 — Phase 4 generic synthesis checkpoint
 
 **Context:** The second reaction cell and two protocol descriptor sources needed an area-growth measurement before higher-level transducer features.
