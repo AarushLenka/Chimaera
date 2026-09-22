@@ -23,10 +23,20 @@ COMPILE_ARGS    += -DFUNCTIONAL
 COMPILE_ARGS    += -DSIM
 
 PDK_STDCELL_DIR = $(PDK_ROOT)/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog
+PDK_STDCELL_UDP = $(PDK_STDCELL_DIR)/sg13cmos5l_udp.v
+PDK_STDCELL_MODEL = $(PDK_STDCELL_DIR)/sg13cmos5l_stdcell.v
+
+ifeq ($(wildcard $(PDK_STDCELL_UDP)),)
+$(error Missing IHP standard-cell UDP model: $(PDK_STDCELL_UDP))
+endif
+ifeq ($(wildcard $(PDK_STDCELL_MODEL)),)
+$(error Missing IHP standard-cell model: $(PDK_STDCELL_MODEL))
+endif
 
 VERILOG_SOURCES += $(PDK_ROOT)/ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/verilog/sg13cmos5l_io.v
-VERILOG_SOURCES += $(PDK_STDCELL_DIR)/sg13cmos5l_stdcell_func.v
-VERILOG_SOURCES += $(PDK_STDCELL_DIR)/sg13cmos5l_stdcell.v
+# The standard-cell model instantiates primitives defined by the UDP model.
+VERILOG_SOURCES += $(PDK_STDCELL_UDP)
+VERILOG_SOURCES += $(PDK_STDCELL_MODEL)
 
 # this gets copied in by the GDS action workflow
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
