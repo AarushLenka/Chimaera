@@ -23,9 +23,11 @@ module chimaera_reaction_cell #(
 
     input  wire                   load,
     input  wire [STATE_WIDTH-1:0] load_state,
-    input  wire [1:0]             load_event_kind,
+    input  wire [3:0]             load_event_kind,
     input  wire [7:0]             load_event_mask,
     input  wire [7:0]             load_event_value,
+    input  wire [7:0]             load_level_mask,
+    input  wire [7:0]             load_level_value,
     input  wire [TIMER_WIDTH-1:0] load_timeout,
     input  wire [7:0]             load_sample_mask,
     input  wire [7:0]             load_action_mask,
@@ -41,16 +43,22 @@ module chimaera_reaction_cell #(
     output reg  [7:0]             drive_enable
 );
 
-  localparam [1:0] EVENT_NONE  = 2'd0;
-  localparam [1:0] EVENT_RISE  = 2'd1;
-  localparam [1:0] EVENT_FALL  = 2'd2;
-  localparam [1:0] EVENT_LEVEL = 2'd3;
+  localparam [3:0] EVENT_NONE             = 4'd0;
+  localparam [3:0] EVENT_RISE             = 4'd1;
+  localparam [3:0] EVENT_FALL             = 4'd2;
+  localparam [3:0] EVENT_LEVEL            = 4'd3;
+  localparam [3:0] EVENT_RISE_WHILE_LEVEL = 4'd4;
+  localparam [3:0] EVENT_FALL_WHILE_LEVEL = 4'd5;
+  localparam [3:0] EVENT_RISE_OR_LEVEL    = 4'd6;
+  localparam [3:0] EVENT_FALL_OR_LEVEL    = 4'd7;
 
   reg                         active;
   reg [STATE_WIDTH-1:0]       state_id;
-  reg [1:0]                   event_kind;
+  reg [3:0]                   event_kind;
   reg [7:0]                   event_mask;
   reg [7:0]                   event_value;
+  reg [7:0]                   level_mask;
+  reg [7:0]                   level_value;
   reg [TIMER_WIDTH-1:0]       timer;
   reg [7:0]                   sample_mask;
   reg [7:0]                   action_mask;
@@ -62,10 +70,22 @@ module chimaera_reaction_cell #(
 
   always @(*) begin
     case (event_kind)
-      EVENT_RISE:  event_match = |(rise_edges & event_mask);
-      EVENT_FALL:  event_match = |(fall_edges & event_mask);
+      EVENT_RISE: event_match = |(rise_edges & event_mask);
+      EVENT_FALL: event_match = |(fall_edges & event_mask);
       EVENT_LEVEL: event_match =
           ((sync_inputs & event_mask) == (event_value & event_mask));
+      EVENT_RISE_WHILE_LEVEL: event_match =
+          (|(rise_edges & event_mask)) &&
+          ((sync_inputs & level_mask) == (level_value & level_mask));
+      EVENT_FALL_WHILE_LEVEL: event_match =
+          (|(fall_edges & event_mask)) &&
+          ((sync_inputs & level_mask) == (level_value & level_mask));
+      EVENT_RISE_OR_LEVEL: event_match =
+          (|(rise_edges & event_mask)) ||
+          ((sync_inputs & level_mask) == (level_value & level_mask));
+      EVENT_FALL_OR_LEVEL: event_match =
+          (|(fall_edges & event_mask)) ||
+          ((sync_inputs & level_mask) == (level_value & level_mask));
       default:     event_match = 1'b0;
     endcase
   end
@@ -82,6 +102,8 @@ module chimaera_reaction_cell #(
       event_kind   <= EVENT_NONE;
       event_mask   <= 8'h00;
       event_value  <= 8'h00;
+      level_mask   <= 8'h00;
+      level_value  <= 8'h00;
       timer        <= {TIMER_WIDTH{1'b0}};
       sample_mask  <= 8'h00;
       action_mask  <= 8'h00;
@@ -106,6 +128,8 @@ module chimaera_reaction_cell #(
         event_kind   <= load_event_kind;
         event_mask   <= load_event_mask;
         event_value  <= load_event_value;
+        level_mask   <= load_level_mask;
+        level_value  <= load_level_value;
         timer        <= load_timeout;
         sample_mask  <= load_sample_mask;
         action_mask  <= load_action_mask;

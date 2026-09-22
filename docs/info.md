@@ -10,31 +10,32 @@ You can also include images in this folder and reference them in the markdown. E
 ## Chimaera
 
 Chimaera is an event-driven programmable protocol transducer ASIC project. The
-functional design is specified in `agent-docs/SPEC.md`; the current Phase 2 build
-is the first UART reaction-cell slice.
+functional design is specified in `agent-docs/SPEC.md`; the current Phase 4 build
+contains the UART baseline plus selectable I2C and SPI programs.
 
 ## How it works
 
-The Phase 2 RTL contains one descriptor-driven reaction cell, a shared serial
-shift/count execution-engine slice, and a UART 8-N-1 program. A byte received on
-`uio[0]` is exposed on `uo_out[7:0]` and echoed on push-pull `uio[1]`; each UART
-bit lasts 16 clocks at the current 50 MHz simulation target.
+The RTL contains two descriptor-driven reaction cells and one shared execution
+engine. Cell 0 receives and echoes UART 8-N-1 on `uio[0:1]`. Cell 1 is selected
+with `ui_in[1:0]`: `00` is an I2C target at address `0x42` on `uio[4:5]`, and
+`01` is an SPI mode-0 target on `uio[4:7]` that returns `0x3c`. I2C SDA/SCL
+outputs are structurally low-only. The last received byte appears on `uo_out`.
 
 ## How to test
 
-GitHub CI runs the cocotb tests in `test/test.py`. They send `0xA5`, check the
-received byte and echoed waveform, and verify that a false start pulse is
-rejected. A dependency-free local smoke test is also available:
+GitHub CI runs the cocotb tests in `test/test.py`. They cover UART receive/echo
+and false-start rejection, I2C ACK/NACK and data capture, and SPI response,
+capture, and CS-abort behavior. A dependency-free local smoke test is also
+available:
 
 ```sh
-iverilog -g2012 -s smoke_uart -o /tmp/chimaera-smoke \
-  src/*.v test/smoke_uart.v
+iverilog -g2012 -s smoke_phase4 -o /tmp/chimaera-smoke \
+  src/*.v test/smoke_phase4.v
 vvp /tmp/chimaera-smoke
 ```
 
-Hold `uio[0]` high when idle and send an 8-N-1 frame at one bit per 16 input
-clocks. After a valid stop bit, read the byte on `uo_out`; the same byte is echoed
-as an 8-N-1 frame on `uio[1]`.
+For UART, hold `uio[0]` high when idle and send an 8-N-1 frame at one bit per 16
+input clocks. For I2C, select `ui_in[1:0]=00`; for SPI, select `01`.
 
 ## External hardware
 

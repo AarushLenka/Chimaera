@@ -144,7 +144,24 @@ as the reaction cells, evaluates armed temporal assertions (grammar defined in
 (trigger output, freeze trace, record violation + timestamp, release driven pins)
 without halting the reaction cells' continued operation.
 
-## 9. What to build in what order (mirrors `IMPLEMENTATION.md`, restated here for
+## 9. Phase 4 implementation checkpoint
+
+The current RTL instantiates the two planned reaction cells. Cell 0 retains the
+UART descriptor program on Port A (`uio[0:1]`); cell 1 selects the temporary I2C
+target or SPI mode-0 target descriptor program from `ui_in[1:0]` and uses Port B
+(`uio[7:4]`). Both cells feed one `chimaera_execution_engine` instance. Each
+context has its own small shift/count state, while descriptor matching and
+predecoded output actions remain local to the reaction cell, so one context
+cannot add variable event-to-output latency to the other.
+
+I2C SDA/SCL output enable is clamped to low-only at the top-level output stage;
+the I2C program can request a low drive or release but cannot produce a driven
+high. SPI MISO is additionally gated off whenever synchronized CS is high, so a
+truncated transaction releases the output before the next transaction. The
+temporary selectors and descriptor sources will be replaced by the host loader
+in Phase 5; they are not the final program-memory implementation.
+
+## 10. What to build in what order (mirrors `IMPLEMENTATION.md`, restated here for
 build-time reference)
 
 1. One reaction cell + shared execution engine minimum viable slice, UART only.

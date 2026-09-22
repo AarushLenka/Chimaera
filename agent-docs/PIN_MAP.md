@@ -17,23 +17,26 @@ repository at project start (Phase 0 of `IMPLEMENTATION.md`) — these names are
 stable across recent Tiny Tapeout shuttles but should be verified, not assumed,
 since this document was drafted before template setup.
 
-## 2. Reference allocation (starting point — confirm/adjust during Phase 2–4 build-out)
+## 2. Phase 4 allocation
 
 | Pin group | Assignment | Notes |
 |---|---|---|
-| `uio[3:0]` | Port A (Device A side) | 4 bidirectional lines — covers open-drain (I2C-style: data + clock) and push-pull (SPI/UART-style: multiple signal lines) needs for one protocol side. |
-| `uio[7:4]` | Port B (Device B side) | Mirror of Port A, other side of the transducer. |
-| `ui_in[7:0]` | Reserved for the host configuration interface | Unused by the Phase 2 UART slice; must be assigned before Phase 4 completes. |
-| `uo_out[7:0]` | Last successfully received UART byte | Phase 2 observability path; later host readback may replace this direct mapping. |
-| `uio[0]` | Port A UART RX | Input only in Phase 2. |
-| `uio[1]` | Port A UART TX | Push-pull output, idle high, in Phase 2. |
-| `uio[3:2]` | Port A reserved | Released/input in Phase 2. |
-| `uio[7:4]` | Port B reserved | Released/input in Phase 2. |
+| `uio[3:0]` | Port A (Device A side) | UART baseline: `uio[0]` RX and `uio[1]` TX; `uio[3:2]` released/input. |
+| `uio[7:4]` | Port B (Device B side) | I2C and SPI Phase 4 endpoint pins. |
+| `ui_in[1:0]` | Port B protocol selector | `00` selects I2C, `01` selects SPI, and `10`/`11` disable cell 1. Temporary until Phase 5 loader. |
+| `ui_in[7:2]` | Reserved host configuration inputs | Reserved pin names; final SPI-like loader behavior is Phase 5 scope. |
+| `uo_out[7:0]` | Last received protocol byte | Updated by UART RX, I2C data capture, or SPI command capture. |
+| `uio[0]` | Port A UART RX | Input only. |
+| `uio[1]` | Port A UART TX | Push-pull output, idle high. |
+| `uio[3:2]` | Port A reserved | Released/input. |
+| `uio[4]` | Port B I2C SDA / SPI SCLK | I2C input/open-drain; SPI input. |
+| `uio[5]` | Port B I2C SCL / SPI MOSI | I2C input/open-drain; SPI input. |
+| `uio[6]` | Port B reserved in I2C / SPI MISO | Push-pull output only in SPI while CS is low. |
+| `uio[7]` | Port B reserved in I2C / SPI CS | SPI input, active low. |
 
-The host-interface assignment remains intentionally reserved during Phase 2. Fill
-it in no later than the end of Phase 4 (`IMPLEMENTATION.md`) — by the time
-transducer modes and fault injection are being built in Phase 6, this table must
-be exact and complete, since later phases depend on a stable pinout.
+The Phase 4 selector is a temporary bootstrap interface, not the final host
+configuration protocol. The exact SPI-like loader assignment and behavior must be
+implemented in Phase 5 before transducer modes and fault injection depend on it.
 
 ## 3. Per-protocol pin usage within a port (Port A shown; Port B mirrors)
 
@@ -63,6 +66,6 @@ construction, not by testing coincidence.
 ## 5. Status of this document
 
 The wrapper names and widths in §1 have been verified against the checked-out
-Tiny Tapeout template. The UART assignments in §2 match the Phase 2 RTL. Port B
-and the host configuration pins remain reserved until their Phase 4 functions
-exist; those rows are not yet the final v1 allocation.
+Tiny Tapeout template. The UART and Port B assignments in §2 match the Phase 4
+RTL. The host loader remains a documented Phase 5 item; no final v1 loader
+behavior is claimed by this checkpoint.

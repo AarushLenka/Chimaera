@@ -23,10 +23,16 @@ module tb ();
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
   wire       uart_tx;
+  wire       i2c_sda_out;
+  wire       i2c_scl_out;
+  wire       spi_miso;
 
   // Scalar observation point for cocotb edge triggers.  Packed vector handles
   // cannot be indexed directly by the cocotb 2.x trigger API.
   assign uart_tx = uio_out[1];
+  assign i2c_sda_out = uio_out[4];
+  assign i2c_scl_out = uio_out[5];
+  assign spi_miso = uio_out[6];
 
   // Chimaera top-level module:
   tt_um_chimaera user_project (

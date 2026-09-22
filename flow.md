@@ -50,3 +50,47 @@ The gate-level Makefile now explicitly includes the IHP functional standard-cell
 model before the regular standard-cell model. The next check is a fresh GDS
 workflow run; local RTL checks remain available, but the IHP PDK is only
 installed in the CI runner.
+
+The pinned CI PDK does not contain the assumed `_func.v` file. Inspection of its
+Verilog sources showed that `sg13cmos5l_stdcell.v` instantiates `ihp_dff_r` and
+`ihp_mux2`, while `sg13cmos5l_udp.v` defines them. The gate-level setup therefore
+uses the UDP model followed by the standard-cell model, with parse-time checks
+for both paths.
+
+## 2026-09-22 — Phase 3 synthesis and hardening checkpoint
+
+The Phase 2 UART slice was synthesized before any Phase 4 feature work. The local
+Yosys run mapped the complete `tt_um_chimaera` hierarchy to 488 generic cells,
+with 380 wires and 888 wire bits; this is a technology-independent directional
+baseline, not an IHP area estimate. The dependency-free RTL smoke test still
+passed with `RX=0xA5`, `TX=0xA5`, 16 clocks per bit, and the rejected short false
+start.
+
+The official Tiny Tapeout workflow for commit `6800e58` then completed the IHP
+SG13C5L GDS hardening, viewer generation, precheck, and gate-level test
+successfully at the configured 50 MHz / 20 ns target. The generated GDS and
+reports are retained as workflow artifacts; the exact technology-mapped cell
+table and numerical slack are not present in this checkout, so the generic count
+is deliberately not presented as physical area. Phase 3's go/no-go result is
+positive: the real-PDK hardening checkpoint passed, and the next session can add
+the second reaction cell plus I2C/SPI while preserving this baseline.
+
+## 2026-09-22 — Phase 4 two-cell I2C/SPI slice
+
+Started Phase 4 after the Phase 3 hardening checkpoint. Cell 0 remains the
+descriptor-driven UART context; cell 1 now shares the execution-engine module
+and selects a temporary I2C or SPI descriptor program from `ui_in[1:0]`. The I2C
+program accepts address `0x42`, ACKs one write byte, and records that byte. The
+SPI mode-0 program captures one command and returns `0x3c`. I2C SDA/SCL outputs
+are clamped to low-only, and an incomplete SPI transaction releases MISO when
+CS returns high.
+
+The dependency-free `smoke_phase4` simulation passed UART baseline behavior,
+valid I2C ACK/data capture, wrong-address NACK, SPI response/capture, and SPI
+CS abort. Verilator lint, Yosys structural checks, and Python syntax checks also
+passed. The full generic Yosys hierarchy count is 1,747 cells, versus 488 for
+the Phase 3 baseline; this is a directional generic comparison, not an IHP area
+or timing result. The local cocotb command could not run because `cocotb-config`
+is not installed, so the CI cocotb result remains outstanding. The temporary
+bootstrap selector and fixed demo values need Hausen's confirmation before this
+checkpoint is treated as a final Phase 4 decision.

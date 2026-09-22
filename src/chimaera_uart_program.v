@@ -18,9 +18,11 @@ module chimaera_uart_program #(
 ) (
     input  wire [STATE_WIDTH-1:0] state_id,
     input  wire                   tx_bit,
-    output reg  [1:0]             event_kind,
+    output reg  [3:0]             event_kind,
     output reg  [7:0]             event_mask,
     output reg  [7:0]             event_value,
+    output reg  [7:0]             level_mask,
+    output reg  [7:0]             level_value,
     output reg  [TIMER_WIDTH-1:0] timeout_cycles,
     output reg  [7:0]             sample_mask,
     output reg  [7:0]             action_mask,
@@ -29,9 +31,9 @@ module chimaera_uart_program #(
     output reg  [7:0]             oe_value
 );
 
-  localparam [1:0] EVENT_NONE  = 2'd0;
-  localparam [1:0] EVENT_FALL  = 2'd2;
-  localparam [1:0] EVENT_LEVEL = 2'd3;
+  localparam [3:0] EVENT_NONE  = 4'd0;
+  localparam [3:0] EVENT_FALL  = 4'd2;
+  localparam [3:0] EVENT_LEVEL = 4'd3;
   localparam integer HALF_BIT_CYCLES = BIT_CYCLES / 2;
 
   localparam [STATE_WIDTH-1:0] STATE_IDLE        = 0;
@@ -46,6 +48,8 @@ module chimaera_uart_program #(
     event_kind    = EVENT_NONE;
     event_mask    = 8'h00;
     event_value   = 8'h00;
+    level_mask    = 8'h00;
+    level_value   = 8'h00;
     timeout_cycles = {TIMER_WIDTH{1'b0}};
     sample_mask   = 8'h00;
     action_mask   = 8'h00;
