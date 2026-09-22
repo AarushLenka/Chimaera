@@ -52,7 +52,6 @@ async def set_i2c_lines(dut, sda, scl, settle=3):
     await ReadWrite()
     dut.uio_in.value = value
     await ClockCycles(dut.clk, settle)
-    await ReadOnly()
 
 
 async def i2c_start(dut):
@@ -75,9 +74,11 @@ async def i2c_ack_cycle(dut):
     await ReadOnly()
     assert int(dut.uio_oe.value) & (1 << I2C_SDA_PIN), "I2C target did not ACK"
     await set_i2c_lines(dut, 0, 1)
+    await ReadOnly()
     assert pin(dut.uio_out.value, I2C_SDA_PIN) == 0
     await set_i2c_lines(dut, 0, 0)
     await set_i2c_lines(dut, 1, 0)
+    await ReadOnly()
     assert not (int(dut.uio_oe.value) & (1 << I2C_SDA_PIN)), "I2C SDA not released"
 
 
@@ -90,19 +91,21 @@ async def set_spi_lines(dut, sclk, mosi, cs, settle=3):
     await ReadWrite()
     dut.uio_in.value = value
     await ClockCycles(dut.clk, settle)
-    await ReadOnly()
 
 
 async def spi_transaction(dut, value):
     await set_spi_lines(dut, 0, 0, 0)
+    await ReadOnly()
     assert int(dut.uio_oe.value) & (1 << SPI_MISO_PIN), "SPI MISO not enabled"
     response = 0
     for bit_index in range(8):
         bit_value = (value >> bit_index) & 1
         await set_spi_lines(dut, 0, bit_value, 0, settle=2)
         await set_spi_lines(dut, 1, bit_value, 0)
+        await ReadOnly()
         response |= pin(dut.uio_out.value, SPI_MISO_PIN) << bit_index
         await set_spi_lines(dut, 0, bit_value, 0)
+    await ReadOnly()
     assert not (int(dut.uio_oe.value) & (1 << SPI_MISO_PIN)), "SPI MISO not released"
     await set_spi_lines(dut, 0, 0, 1)
     return response
@@ -189,6 +192,7 @@ async def i2c_target_acknowledges_address_and_data(dut):
     await i2c_send_byte(dut, 0x5A)
     await i2c_ack_cycle(dut)
 
+    await ReadOnly()
     assert int(dut.uo_out.value) == 0x5A
     assert not (int(dut.uio_oe.value) & (1 << I2C_SDA_PIN))
 
@@ -203,6 +207,7 @@ async def i2c_wrong_address_is_nacked_and_never_drives_high(dut):
     await i2c_start(dut)
     await i2c_send_byte(dut, 0x86)
     await set_i2c_lines(dut, 1, 0)
+    await ReadOnly()
     assert not (int(dut.uio_oe.value) & (1 << I2C_SDA_PIN)), "Wrong address was ACKed"
     assert pin(dut.uio_out.value, I2C_SDA_PIN) == 0
 
@@ -216,6 +221,7 @@ async def spi_target_shifts_response_and_captures_command(dut):
 
     response = await spi_transaction(dut, 0xA5)
 
+    await ReadOnly()
     assert response == 0x3C
     assert int(dut.uo_out.value) == 0xA5
     assert not (int(dut.uio_oe.value) & (1 << SPI_MISO_PIN))
@@ -230,7 +236,9 @@ async def spi_chip_select_abort_releases_miso(dut):
     await set_spi_lines(dut, 0, 0, 0)
     await set_spi_lines(dut, 1, 0, 0)
     await set_spi_lines(dut, 0, 0, 0)
+    await ReadOnly()
     assert int(dut.uio_oe.value) & (1 << SPI_MISO_PIN)
 
     await set_spi_lines(dut, 0, 0, 1)
+    await ReadOnly()
     assert not (int(dut.uio_oe.value) & (1 << SPI_MISO_PIN)), "Aborted SPI frame kept MISO driven"

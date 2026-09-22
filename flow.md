@@ -104,3 +104,10 @@ before reset, I2C, and SPI input assignments; output checks remain explicitly in
 `ReadOnly`. Python syntax and the dependency-free Phase 4 smoke test pass after
 the repair. A fresh CI run is still needed to verify both RTL and gate-level
 jobs, since cocotb and the PDK are not installed locally.
+
+The first repair exposed a second scheduling mistake: the helpers themselves
+still returned in `ReadOnly`, so a caller's next `ReadWrite` was an illegal
+backward transition. The final repair leaves helpers writable after their settle
+clocks and places `ReadOnly` only before output assertions. Local syntax, smoke
+simulation, and diff checks pass; CI must be rerun for the definitive RTL and GL
+result.

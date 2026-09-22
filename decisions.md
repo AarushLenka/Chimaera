@@ -50,6 +50,14 @@ Phase 2 program/configuration choices, not the final program-memory encoding.
 **Consequences:** The same testbench can drive RTL and gate-level DUTs without illegal-phase writes; CI must rerun to confirm both jobs pass.
 **Status:** confirmed by Hausen
 
+## 2026-09-22 — Keep reusable cocotb drive helpers writable
+
+**Context:** The first phase-safety repair still ended the I2C/SPI drive helpers in `ReadOnly`, so a caller's next `ReadWrite` caused an illegal backward phase transition.
+**Decision:** Drive helpers enter `ReadWrite` only for assignments and return after `ClockCycles`; callers enter `ReadOnly` immediately before each output observation.
+**Alternatives considered:** Re-entering `ReadWrite` from every caller would still fail if the helper had already entered `ReadOnly`. Removing output synchronization would reintroduce read races.
+**Consequences:** Helper composition is legal under cocotb 2.0, and output checks remain deterministic for RTL and gate-level simulations.
+**Status:** confirmed by Hausen
+
 ## 2026-09-22 — Phase 4 generic synthesis checkpoint
 
 **Context:** The second reaction cell and two protocol descriptor sources needed an area-growth measurement before higher-level transducer features.
