@@ -1,40 +1,91 @@
-# SPDX-FileCopyrightText: © 2024 Tiny Tapeout
+# SPDX-FileCopyrightText: 2026 Chimaera contributors
 # SPDX-License-Identifier: Apache-2.0
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles
+from cocotb.triggers import ClockCycles, FallingEdge, ReadOnly, with_timeout
+
+
+CLOCK_NS = 20
+BIT_CYCLES = 16
+RX_PIN = 0
+TX_PIN = 1
+
+
+def pin(value, index):
+    return (int(value) >> index) & 1
+
+
+async def reset_dut(dut):
+    dut.ena.value = 1
+    dut.ui_in.value = 0
+    dut.uio_in.value = 0xFF
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 5)
+    dut.rst_n.value = 1
+    await ClockCycles(dut.clk, 5)
+
+
+async def drive_uart_byte(dut, value):
+    # 8-N-1, least-significant bit first.
+    dut.uio_in.value = 0xFE
+    await ClockCycles(dut.clk, BIT_CYCLES)
+    for bit_index in range(8):
+        bit_value = (value >> bit_index) & 1
+        dut.uio_in.value = 0xFF if bit_value else 0xFE
+        await ClockCycles(dut.clk, BIT_CYCLES)
+    dut.uio_in.value = 0xFF
+    await ClockCycles(dut.clk, BIT_CYCLES)
+
+
+async def decode_uart_tx(dut):
+    await FallingEdge(dut.uio_out[TX_PIN])
+
+    # Check the middle of the start bit, then each data bit and the stop bit.
+    await ClockCycles(dut.clk, BIT_CYCLES // 2)
+    await ReadOnly()
+    assert pin(dut.uio_out.value, TX_PIN) == 0, "TX start bit ended early"
+
+    value = 0
+    for bit_index in range(8):
+        await ClockCycles(dut.clk, BIT_CYCLES)
+        await ReadOnly()
+        value |= pin(dut.uio_out.value, TX_PIN) << bit_index
+
+    await ClockCycles(dut.clk, BIT_CYCLES)
+    await ReadOnly()
+    assert pin(dut.uio_out.value, TX_PIN) == 1, "TX stop bit is not high"
+    return value
 
 
 @cocotb.test()
-async def test_project(dut):
-    dut._log.info("Start")
+async def uart_receive_and_echo_has_exact_bit_timing(dut):
+    """Receive 0xA5, expose it on uo_out, and transmit the same 8-N-1 frame."""
+    cocotb.start_soon(Clock(dut.clk, CLOCK_NS, unit="ns").start())
+    await reset_dut(dut)
 
-    # Set the clock period to 10 us (100 KHz)
-    clock = Clock(dut.clk, 10, unit="us")
-    cocotb.start_soon(clock.start())
+    assert int(dut.uio_oe.value) == (1 << TX_PIN), "Only UART TX may drive"
+    assert pin(dut.uio_out.value, TX_PIN) == 1, "UART TX must idle high"
 
-    # Reset
-    dut._log.info("Reset")
-    dut.ena.value = 1
-    dut.ui_in.value = 0
-    dut.uio_in.value = 0
-    dut.rst_n.value = 0
-    await ClockCycles(dut.clk, 10)
-    dut.rst_n.value = 1
+    tx_decoder = cocotb.start_soon(decode_uart_tx(dut))
+    await drive_uart_byte(dut, 0xA5)
+    echoed_value = await with_timeout(tx_decoder, 10, "us")
 
-    dut._log.info("Test project behavior")
+    assert int(dut.uo_out.value) == 0xA5
+    assert echoed_value == 0xA5
 
-    # Set the input values you want to test
-    dut.ui_in.value = 20
-    dut.uio_in.value = 30
 
-    # Wait for one clock cycle to see the output values
-    await ClockCycles(dut.clk, 1)
+@cocotb.test()
+async def uart_false_start_is_rejected(dut):
+    """A low pulse shorter than half a bit must not become a received byte."""
+    cocotb.start_soon(Clock(dut.clk, CLOCK_NS, unit="ns").start())
+    await reset_dut(dut)
 
-    # The following assersion is just an example of how to check the output values.
-    # Change it to match the actual expected output of your module:
-    assert dut.uo_out.value == 50
+    dut.uio_in.value = 0xFE
+    await ClockCycles(dut.clk, BIT_CYCLES // 4)
+    dut.uio_in.value = 0xFF
+    await ClockCycles(dut.clk, BIT_CYCLES * 3)
 
-    # Keep testing the module by changing the input values, waiting for
-    # one or more clock cycles, and asserting the expected output values.
+    assert int(dut.uo_out.value) == 0x00
+    assert pin(dut.uio_out.value, TX_PIN) == 1
+    assert int(dut.uio_oe.value) == (1 << TX_PIN)

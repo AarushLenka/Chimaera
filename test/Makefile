@@ -6,7 +6,7 @@ SIM ?= icarus
 FST ?= -fst # Use more efficient FST format
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = project.v
+PROJECT_SOURCES = chimaera_input_frontend.v chimaera_uart_program.v chimaera_execution_engine.v chimaera_reaction_cell.v project.v
 
 ifneq ($(GATES),yes)
 
