@@ -27,3 +27,16 @@ GitHub CI. Phase 2 is not complete until the cocotb UART TX/RX tests pass there.
 Hausen also established the repository policy that work must be split into
 focused local commits without AI contributor attribution, and that the agent must
 stop and announce when those commits are ready rather than pushing automatically.
+
+## 2026-09-22 — Repair CI metadata and cocotb signal trigger
+
+The first Phase 2 push reached all three workflows but failed in two independent
+ways: the cocotb test indexed the packed `uio_out` handle directly, which the CI
+simulator rejects, and `info.yaml` still had an empty author. The GDS lint-log
+error was a downstream symptom of metadata validation stopping the build before
+that artifact could be generated. The testbench now exposes TX as a scalar edge
+trigger while the test still extracts the bit from the output bus, and the
+metadata names the repository author.
+The Python 3.11 CI-equivalent cocotb run then passed both tests, and the local
+smoke simulation plus Verilator lint remained clean. The focused fix is ready
+for review and push.

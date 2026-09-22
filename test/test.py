@@ -39,7 +39,10 @@ async def drive_uart_byte(dut, value):
 
 
 async def decode_uart_tx(dut):
-    await FallingEdge(dut.uio_out[TX_PIN])
+    # Icarus/cocotb exposes packed vectors as non-indexable handles, and
+    # FallingEdge requires a scalar signal.  The testbench provides uart_tx as
+    # a scalar observation point for this pin.
+    await FallingEdge(dut.uart_tx)
 
     # Check the middle of the start bit, then each data bit and the stop bit.
     await ClockCycles(dut.clk, BIT_CYCLES // 2)

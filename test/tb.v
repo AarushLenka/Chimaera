@@ -22,6 +22,11 @@ module tb ();
   wire [7:0] uo_out;
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
+  wire       uart_tx;
+
+  // Scalar observation point for cocotb edge triggers.  Packed vector handles
+  // cannot be indexed directly by the cocotb 2.x trigger API.
+  assign uart_tx = uio_out[1];
 
   // Chimaera top-level module:
   tt_um_chimaera user_project (
