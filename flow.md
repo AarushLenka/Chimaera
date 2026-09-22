@@ -40,3 +40,13 @@ metadata names the repository author.
 The Python 3.11 CI-equivalent cocotb run then passed both tests, and the local
 smoke simulation plus Verilator lint remained clean. The focused fix is ready
 for review and push.
+
+## 2026-09-22 — Add IHP functional models to gate-level test
+
+The remote GDS hardening, viewer, and precheck completed successfully, but the
+gate-level simulation stopped during Icarus elaboration because the IHP
+`ihp_dff_r` and `ihp_mux2` primitives were missing from the simulator inputs.
+The gate-level Makefile now explicitly includes the IHP functional standard-cell
+model before the regular standard-cell model. The next check is a fresh GDS
+workflow run; local RTL checks remain available, but the IHP PDK is only
+installed in the CI runner.
