@@ -25,11 +25,21 @@ jobs:
 
       - name: Run tests
         run: |
+          set -euo pipefail
           cd test
           make clean
-          make
-          # make will return success even if the test fails, so check for failure in the results.xml
-          ! grep failure results.xml
+          # phase5 is the Makefile's first target; sim generates results.xml.
+          make sim
+
+          if [[ ! -f results.xml ]]; then
+            echo "::error::Test command did not produce test/results.xml"
+            exit 1
+          fi
+
+          if grep -q '<failure' results.xml; then
+            echo "::error::Test failures found in test/results.xml"
+            exit 1
+          fi
 
       - name: Run Phase 5 compiler and loader regressions
         run: |
@@ -37,16 +47,17 @@ jobs:
           make -C test phase5
 
       - name: Test Summary
+        if: always() && hashFiles('test/results.xml') != ''
         uses: test-summary/action@v2.4
         with:
-          paths: "test/results.xml"
-        if: always()
+          paths: test/results.xml
 
       - name: upload waveform and test results
-        if: success() || failure()
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: test-results
+          if-no-files-found: warn
           path: |
             test/tb.fst
             test/results.xml
