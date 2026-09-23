@@ -65,3 +65,84 @@ Phase 2 program/configuration choices, not the final program-memory encoding.
 **Alternatives considered:** Reporting only local top-level cells would hide the cost of the reaction cells and shared engine. Calling the generic count an IHP area number would be misleading because the technology mapping and place-and-route report are not present locally.
 **Consequences:** The design remains far below the rough 24,000-cell competition ceiling as a generic estimate, but the 3.6x growth is large enough that the next real-PDK hardening run is required before Phase 5/6 scope is added.
 **Status:** proposed
+
+## 2026-09-23 — Accept the Phase 4 CI checkpoint
+
+**Context:** Phase 4 could not close until the repaired cocotb suite and the real-PDK workflow both passed with the two-cell UART/I2C/SPI design.
+**Decision:** Accept commit `7a0f415` as the Phase 4 checkpoint. Its six RTL cocotb tests pass, and the Tiny Tapeout workflow passes precheck, IHP hardening, gate-level simulation, and viewer generation. The bootstrap protocol selector and fixed demo values remain temporary Phase 4 mechanisms to be replaced in Phase 5; this decision does not freeze a loader or microcode encoding.
+**Alternatives considered:** Keeping Phase 4 open after both simulation and real-PDK CI passed would add no new evidence and would delay the specified compiler phase.
+**Consequences:** Phase 5 may begin from a verified hardware baseline. The exact descriptor encoding and host-loader command format still require a separate confirmed design decision before compiler binaries and loader RTL are coupled to them.
+**Status:** confirmed by Hausen
+
+## 2026-09-23 — Stage Phase 5 behind a versioned host IR
+
+**Context:** Phase 5 needs a parser, proof checker, compiler, and reference model, but the packed descriptor-memory layout and SPI-like loader command ABI have not been confirmed. Coupling the first parser directly to an unreviewed hardware format would make both sides expensive to change.
+**Decision:** Start Phase 5 with a dependency-free Python front end and a deterministic `chimaera-host-ir-v1` object explicitly marked as not chip-loadable. Require compile-time logical-to-physical pin bindings, make the first declared state the entry state, and use `mutation <name> for <protocol>` / `contract <name> for <protocol>` for unambiguous attachment. Edge-wait states may sleep without a timeout, but states with no event/timeout and level-sensitive cycles are rejected as unbounded busy loops.
+**Alternatives considered:** Freezing a packed descriptor format immediately would decide memory width, transition encoding, and loader complexity without an area comparison. Emitting only an unchecked syntax tree would not exercise the proof-carrying-microcode claims. Requiring timeouts on idle edge-wait states would waste descriptors and conflate safe sleeping with active looping.
+**Consequences:** Parser, safety-checker, artifact, and reference-model behavior can now be tested independently of loader RTL. The object cannot yet be loaded on-chip; shared-engine schedulability, mutation/contract lowering, randomized test generation, the packed ABI, and the loader remain open before Phase 5 can close.
+**Status:** confirmed by Hausen
+
+## 2026-09-23 — Use 32 fixed-width descriptors for the first loader checkpoint
+
+**Context:** The architecture's 128-descriptor memory was explicitly a synthesis starting point. A runtime-writable 128-bit-wide standard-cell memory synthesized to 8,743 generic cells at 32 entries, 17,232 at 64 entries, and 34,203 at 128 entries; the Phase 4 design was already 1,747 generic cells before loader, trace, fault, and contract logic.
+**Decision:** Use 32 entries × 128 bits for the first production compiler/loader ABI. Keep one-cycle indexed descriptor reads and five-bit state IDs; have the compiler reject post-lowering programs above 32 states. Write each descriptor as eight 16-bit host-interface words and keep the host object marked non-loadable until the exact bit packing is verified against RTL.
+**Alternatives considered:** Sixty-four fixed entries preserve timing but leave little directional area margin. The original 128-entry starting point exceeds the rough raw cell budget under standard-cell inference. A compact variable-length 16-bit stream saves bits for simple states but adds pointer storage, variable decode/re-arm latency, and scheduler proof complexity.
+**Consequences:** Fixed read latency and the current five-bit RTL IDs are preserved, while v1 programs receive a real 32-state limit. Full-program lowering, generic synthesis, and IHP place-and-route must validate that the remaining state and area margins are sufficient; failure reopens compact encoding rather than silently increasing depth.
+**Status:** confirmed by Hausen (delegated implementation choice for the 24-tile budget)
+
+## 2026-09-23 — Freeze the loader ABI and use pending-first descriptor rearm
+
+**Context:** The accepted 32-entry depth still needed exact field positions, a
+serial command format, and a scheduler that could share one descriptor read port
+without making output reaction time depend on contention.
+**Decision:** Freeze the 128-bit layout and 32-bit command frames documented in
+`agent-docs/PHASE5_ABI_PROPOSAL.md`. Keep both cells' predecoded event/action paths
+independent and use pending-first single-port rearm: simultaneous fires commit both
+actions, one descriptor reloads immediately, and the deferred context reloads on
+the following edge ahead of new work. Retain the small counter/shift successor
+calculation per context so both successors are captured on the fire edge.
+**Alternatives considered:** A dual-read descriptor memory would increase the
+dominant memory mux cost. Fixed-priority arbitration could starve one context when
+the other fires continuously. Serializing successor calculation as well as memory
+read would require another queued sample/control record and a longer proof bound.
+**Consequences:** Loaded programs retain the one-cycle synchronized-event-to-action
+guarantee and receive a two-inclusive-cycle maximum rearm bound. Protocol-only
+objects can now be marked chip-loadable; mutations/contracts remain host-only until
+Phase 6. The 50 MHz synchronized configuration interface limits SCLK to below
+12.5 MHz. A deferred context is unarmed on its reload edge, so two-context
+manifests explicitly require at least two cycles between relevant events until the
+DSL gains timing-requirement declarations. The reference chip model mirrors the
+same pending-first behavior.
+**Status:** confirmed by Hausen (delegated implementation choice for the 24-tile budget)
+
+## 2026-09-23 — Phase 5 integrated generic synthesis checkpoint
+
+**Context:** The accepted ABI needed a full-design area comparison after adding
+the serial sampler, loader validation, 4,096-bit descriptor memory, loaded runtime,
+and legacy regression fallback.
+**Decision:** Record the local Yosys 0.63 hierarchy result of 12,344 generic cells.
+The loader accounts for 9,214 cells, including 4,096 descriptor flip-flops; the
+generic runtime local logic is 185 cells and its counter/shift engine is 276 cells.
+Treat these as directional counts only.
+**Alternatives considered:** Reusing the earlier 8,743-cell memory experiment would
+omit command validation and integrated mux/control costs. Calling 12,344 a physical
+fit result would ignore IHP mapping, clock trees, placement, routing, and utilization
+overhead.
+**Consequences:** The checkpoint is roughly half the raw 24,000-cell planning
+ceiling, so the 32-entry design is reasonable to carry forward. Real IHP hardening
+is still mandatory before claiming that it fits 24 tiles or meets 50 MHz.
+**Status:** proposed
+
+## 2026-09-23 — Declare the 24-tile allocation as 6x4
+
+**Context:** Project specifications and Hausen's confirmed budget are 24 Tiny
+Tapeout tiles, but the inherited `info.yaml` still requested the template default
+`1x1`. The current official IHP support-tools table includes `6x4` as a valid
+rectangular size.
+**Decision:** Set `project.tiles` to `"6x4"`, representing all 24 allocated tiles.
+**Alternatives considered:** Keeping `1x1` would harden against the wrong physical
+budget. `8x4` is supported but requests 32 tiles, while the older template comment
+omitted four-row sizes and was stale relative to the current support-tools table.
+**Consequences:** The next GDS run will target the intended 24-tile die area and
+will provide the first meaningful physical utilization/timing result for Phase 5.
+**Status:** confirmed by Hausen

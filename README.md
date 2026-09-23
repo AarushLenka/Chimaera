@@ -40,3 +40,41 @@ The GitHub action will automatically build the ASIC files using [LibreLane](http
   - Mastodon [#tinytapeout](https://chaos.social/tags/tinytapeout) [@matthewvenn](https://chaos.social/@matthewvenn)
   - X (formerly Twitter) [#tinytapeout](https://twitter.com/hashtag/tinytapeout) [@tinytapeout](https://twitter.com/tinytapeout)
   - Bluesky [@tinytapeout.com](https://bsky.app/profile/tinytapeout.com)
+
+## Phase 5 DSL compiler checkpoint
+
+The dependency-free host compiler can parse a protocol, resolve physical-time
+durations, run the initial proof checks, emit a deterministic host object and
+manifest, and execute the result in a cycle-step reference model. Compile the
+checked-in sample with:
+
+```sh
+python3 -m chimaera examples/phase5/pulse_ack.chi \
+  --clock-hz 50000000 \
+  --bind 'pulse_ack.request=uio[0]' \
+  --bind 'pulse_ack.response=uio[1]'
+```
+
+This emits `.chobj`, `.manifest.json`, `.states.dot`, `.wave.txt`, and
+`.random_test.py` artifacts. The example includes a Phase 6 contract, so its
+manifest remains `chip_loadable: false` until contract hardware lowering exists.
+
+The protocol-only example exercises the accepted 32 × 128-bit chip backend:
+
+```sh
+python3 -m chimaera examples/phase5/loader_pulse.chi \
+  --clock-hz 50000000 \
+  --bind 'loader_pulse.request=uio[0]' \
+  --bind 'loader_pulse.response=uio[1]'
+```
+
+It additionally emits an 84-byte `.loader.bin`: 21 MSB-first 32-bit frames for
+two descriptors, pin modes, CRC-checked commit, and resume. The checked-in RTL
+accepts this stream on `ui_in[2]` (active-low CS), `ui_in[3]` (SCLK below
+12.5 MHz), and `ui_in[4]` (MOSI), with MISO on `uo_out[0]` while selected.
+
+Run the host-toolchain checks without third-party Python packages:
+
+```sh
+python3 -m unittest discover -s phase5_tests -v
+```

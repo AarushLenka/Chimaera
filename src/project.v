@@ -24,8 +24,8 @@ module tt_um_chimaera (
   localparam [1:0] PROTOCOL_I2C = 2'd0;
   localparam [1:0] PROTOCOL_SPI = 2'd1;
 
-  // Phase 4 bootstrap selection.  The strap is sampled continuously until a
-  // descriptor is loaded; Phase 5 will replace this with the host loader.
+  // Phase 4 bootstrap selection remains as a regression-safe power-on fallback.
+  // A BEGIN frame switches pin ownership to the Phase 5 loaded-program path.
   wire [1:0] protocol_select = ui_in[1:0];
 
   wire [7:0] synchronized_inputs;
@@ -52,6 +52,28 @@ module tt_um_chimaera (
   wire                   next_tx_bit_1;
   wire [7:0]             received_byte;
   wire                   received_strobe;
+
+  wire                   cfg_miso;
+  wire                   cfg_active;
+  wire [4:0]             loaded_descriptor_address;
+  wire [127:0]           loaded_descriptor_data;
+  wire [4:0]             loaded_context_entry_0;
+  wire [4:0]             loaded_context_entry_1;
+  wire [1:0]             loaded_context_enable;
+  wire [7:0]             loaded_open_drain_mask;
+  wire                   loaded_program_valid;
+  wire                   loaded_execution_halted;
+  wire                   loaded_load_error;
+  wire                   loaded_load_in_progress;
+  wire [5:0]             loaded_descriptor_count;
+  wire [15:0]            loaded_crc;
+  wire [31:0]            cfg_status_word;
+  wire [7:0]             loaded_drive_value_0;
+  wire [7:0]             loaded_drive_enable_0;
+  wire [7:0]             loaded_drive_value_1;
+  wire [7:0]             loaded_drive_enable_1;
+  wire                   loaded_fire_0;
+  wire                   loaded_fire_1;
 
   reg boot_pending;
 
@@ -101,6 +123,49 @@ module tt_um_chimaera (
       .sync_inputs  (synchronized_inputs),
       .rise_edges   (rising_edges),
       .fall_edges   (falling_edges)
+  );
+
+  chimaera_host_interface host_interface (
+      .clk                    (clk),
+      .rst_n                  (rst_n),
+      .cfg_cs_n               (ui_in[2]),
+      .cfg_sclk               (ui_in[3]),
+      .cfg_mosi               (ui_in[4]),
+      .cfg_miso               (cfg_miso),
+      .cfg_active             (cfg_active),
+      .descriptor_address     (loaded_descriptor_address),
+      .descriptor_data        (loaded_descriptor_data),
+      .context_entry_0        (loaded_context_entry_0),
+      .context_entry_1        (loaded_context_entry_1),
+      .context_enable         (loaded_context_enable),
+      .open_drain_mask        (loaded_open_drain_mask),
+      .program_valid          (loaded_program_valid),
+      .execution_halted       (loaded_execution_halted),
+      .load_error             (loaded_load_error),
+      .load_in_progress       (loaded_load_in_progress),
+      .loaded_descriptor_count(loaded_descriptor_count),
+      .computed_crc           (loaded_crc),
+      .status_word            (cfg_status_word)
+  );
+
+  chimaera_program_runtime loaded_runtime (
+      .clk                 (clk),
+      .rst_n               (rst_n),
+      .execution_halted    (loaded_execution_halted),
+      .context_enable      (loaded_context_enable),
+      .context_entry_0     (loaded_context_entry_0),
+      .context_entry_1     (loaded_context_entry_1),
+      .descriptor_address  (loaded_descriptor_address),
+      .descriptor_data     (loaded_descriptor_data),
+      .sync_inputs         (synchronized_inputs),
+      .rise_edges          (rising_edges),
+      .fall_edges          (falling_edges),
+      .drive_value_0       (loaded_drive_value_0),
+      .drive_enable_0      (loaded_drive_enable_0),
+      .drive_value_1       (loaded_drive_value_1),
+      .drive_enable_1      (loaded_drive_enable_1),
+      .fire_0              (loaded_fire_0),
+      .fire_1              (loaded_fire_1)
   );
 
   chimaera_uart_program #(
@@ -245,12 +310,25 @@ module tt_um_chimaera (
   wire [7:0] spi_abort_release =
       (protocol_select == PROTOCOL_SPI && synchronized_inputs[7]) ? 8'h40 : 8'h00;
 
-  assign uo_out  = received_byte;
-  assign uio_out = cell_drive_value_0 | cell1_pin_value;
-  assign uio_oe  = cell_drive_enable_0 | (cell1_oe_low_only & ~spi_abort_release);
+  wire [7:0] legacy_uio_out = cell_drive_value_0 | cell1_pin_value;
+  wire [7:0] legacy_uio_oe =
+      cell_drive_enable_0 | (cell1_oe_low_only & ~spi_abort_release);
+  wire use_loaded_path = loaded_program_valid || loaded_load_in_progress;
+  wire [7:0] loaded_value = loaded_drive_value_0 | loaded_drive_value_1;
+  wire [7:0] loaded_enable = loaded_drive_enable_0 | loaded_drive_enable_1;
+  // The loaded pin-mode mask makes active-high open-drain drive structurally
+  // impossible even if a malformed descriptor bypasses compiler checks.
+  wire [7:0] loaded_value_low_only = loaded_value & ~loaded_open_drain_mask;
 
-  wire _unused = &{ena, cell_fire_from_timeout_0, cell_fire_from_timeout_1,
-                   received_strobe, 1'b0};
+  assign uo_out[0] = cfg_active ? cfg_miso : received_byte[0];
+  assign uo_out[7:1] = received_byte[7:1];
+  assign uio_out = use_loaded_path ? loaded_value_low_only : legacy_uio_out;
+  assign uio_oe = use_loaded_path ? loaded_enable : legacy_uio_oe;
+
+  wire _unused = &{ena, ui_in[7:5], cell_fire_from_timeout_0,
+                   cell_fire_from_timeout_1, received_strobe,
+                   loaded_load_error, loaded_descriptor_count, loaded_crc,
+                   cfg_status_word, loaded_fire_0, loaded_fire_1, 1'b0};
 
 endmodule
 /* verilator lint_on DECLFILENAME */

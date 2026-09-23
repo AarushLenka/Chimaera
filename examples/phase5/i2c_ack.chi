@@ -1,0 +1,45 @@
+// Minimal I2C write-address recognizer and ACK pulse.
+protocol i2c_ack {
+    pin sda open_drain
+    pin scl input
+
+    state idle {
+        on fall(sda) when scl == 1 {
+            reset address_shift
+            reset bits
+            goto address
+        }
+    }
+
+    state address {
+        on rise(scl) {
+            sample sda into address_shift
+            count bits
+        }
+        when bits == 8 && address_shift == 0x84 -> ack_low
+        when bits == 8 -> ignore
+        within 100 us else -> idle
+    }
+
+    state ack_low {
+        on fall(scl) {
+            drive sda low
+            goto ack_release
+        }
+    }
+
+    state ack_release {
+        on fall(scl) {
+            release sda
+            goto idle
+        }
+    }
+
+    state ignore {
+        on rise(scl) -> idle
+    }
+}
+
+contract i2c_clock_width for i2c_ack {
+    assert high_width(scl) >= 4 cycles
+}

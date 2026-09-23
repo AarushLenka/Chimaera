@@ -74,6 +74,8 @@ module chimaera_execution_engine #(
   reg [7:0] tx_shift_1;
   reg [2:0] bit_index_1;
 
+  wire _unused_rx_shift_1 = &{rx_shift_1[0], 1'b0};
+
   wire [7:0] shifted_rx_0 = {fire_sample_0[RX_PIN], rx_shift_0[7:1]};
   wire [7:0] shifted_rx_1 = {fire_sample_1[I2C_SDA_PIN], rx_shift_1[7:1]};
   wire [7:0] shifted_spi_rx = {fire_sample_1[SPI_MOSI_PIN], rx_shift_1[7:1]};

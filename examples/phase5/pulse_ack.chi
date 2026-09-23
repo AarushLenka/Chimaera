@@ -1,0 +1,25 @@
+// A small human-readable protocol used to exercise the Phase 5 front end.
+protocol pulse_ack {
+    pin request input
+    pin response output
+
+    state idle {
+        on rise(request) {
+            drive response high
+            count requests
+            goto wait_release
+        }
+    }
+
+    state wait_release {
+        on fall(request) {
+            drive response low
+            goto idle
+        }
+        within 4 cycles else -> idle
+    }
+}
+
+contract bounded_ack for pulse_ack {
+    assert high_width(response) <= 4 cycles
+}

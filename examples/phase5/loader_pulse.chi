@@ -1,0 +1,21 @@
+// Protocol-only source that exercises the chip-loader backend.
+protocol loader_pulse {
+    pin request input
+    pin response output
+
+    state idle {
+        on rise(request) {
+            drive response high
+            count requests
+            goto wait_release
+        }
+    }
+
+    state wait_release {
+        on fall(request) {
+            drive response low
+            goto idle
+        }
+        within 4 cycles else -> idle
+    }
+}

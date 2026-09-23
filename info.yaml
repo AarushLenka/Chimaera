@@ -7,8 +7,9 @@ project:
   language:     "Verilog" # other examples include SystemVerilog, Amaranth, VHDL, etc
   clock_hz:     50000000 # Phase 4 target: 50 MHz
 
-  # How many tiles your design occupies? A single tile is about 167x108 uM.
-  tiles: "1x1"          # Valid values: 1x1, 1x2, 2x2, 3x2, 4x2, 6x2 or 8x2
+  # The competition allocation is 24 tiles. Current IHP support tools express
+  # that rectangular allocation as 6 columns by 4 rows.
+  tiles: "6x4"
 
   # Your top module name must start with "tt_um_". Make it unique by including your github username:
   top_module:  "tt_um_chimaera"
@@ -24,6 +25,11 @@ project:
     - "chimaera_port_b_program.v"
     - "chimaera_execution_engine.v"
     - "chimaera_reaction_cell.v"
+    - "chimaera_config_spi.v"
+    - "chimaera_program_loader.v"
+    - "chimaera_host_interface.v"
+    - "chimaera_generic_execution_engine.v"
+    - "chimaera_program_runtime.v"
     - "project.v"
 
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.
@@ -32,15 +38,15 @@ pinout:
   # Inputs
   ui[0]: "Port B protocol select bit 0 (Phase 4 bootstrap strap)"
   ui[1]: "Port B protocol select bit 1 (Phase 4 bootstrap strap)"
-  ui[2]: "Reserved host configuration input"
-  ui[3]: "Reserved host configuration input"
-  ui[4]: "Reserved host configuration input"
+  ui[2]: "Host configuration CS (active low)"
+  ui[3]: "Host configuration serial clock"
+  ui[4]: "Host configuration data input"
   ui[5]: "Reserved host configuration input"
   ui[6]: "Reserved host configuration input"
   ui[7]: "Reserved host configuration input"
 
   # Outputs
-  uo[0]: "Last received protocol byte bit 0"
+  uo[0]: "Last received byte bit 0 / host configuration data output"
   uo[1]: "Last received protocol byte bit 1"
   uo[2]: "Last received protocol byte bit 2"
   uo[3]: "Last received protocol byte bit 3"

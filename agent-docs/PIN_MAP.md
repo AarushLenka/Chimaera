@@ -17,15 +17,19 @@ repository at project start (Phase 0 of `IMPLEMENTATION.md`) — these names are
 stable across recent Tiny Tapeout shuttles but should be verified, not assumed,
 since this document was drafted before template setup.
 
-## 2. Phase 4 allocation
+## 2. Current allocation
 
 | Pin group | Assignment | Notes |
 |---|---|---|
 | `uio[3:0]` | Port A (Device A side) | UART baseline: `uio[0]` RX and `uio[1]` TX; `uio[3:2]` released/input. |
 | `uio[7:4]` | Port B (Device B side) | I2C and SPI Phase 4 endpoint pins. |
-| `ui_in[1:0]` | Port B protocol selector | `00` selects I2C, `01` selects SPI, and `10`/`11` disable cell 1. Temporary until Phase 5 loader. |
-| `ui_in[7:2]` | Reserved host configuration inputs | Reserved pin names; final SPI-like loader behavior is Phase 5 scope. |
-| `uo_out[7:0]` | Last received protocol byte | Updated by UART RX, I2C data capture, or SPI command capture. |
+| `ui_in[1:0]` | Legacy Port B selector | Used only before a loaded-program `BEGIN`: `00` I2C, `01` SPI, `10`/`11` disabled. |
+| `ui_in[2]` | Host configuration CS | Active low. An incomplete 32-bit transaction is rejected. |
+| `ui_in[3]` | Host configuration SCLK | MSB-first; must remain below `clk/4` (12.5 MHz at 50 MHz). |
+| `ui_in[4]` | Host configuration MOSI | Carries 32-bit command frames. |
+| `ui_in[7:5]` | Reserved host inputs | Must not be relied on by loaded programs. |
+| `uo_out[0]` | Host MISO / received-byte bit 0 | MISO while configuration CS is active; legacy received-byte bit 0 otherwise. |
+| `uo_out[7:1]` | Last received protocol byte bits `7:1` | Legacy Phase 4 observation output. |
 | `uio[0]` | Port A UART RX | Input only. |
 | `uio[1]` | Port A UART TX | Push-pull output, idle high. |
 | `uio[3:2]` | Port A reserved | Released/input. |
@@ -34,9 +38,10 @@ since this document was drafted before template setup.
 | `uio[6]` | Port B reserved in I2C / SPI MISO | Push-pull output only in SPI while CS is low. |
 | `uio[7]` | Port B reserved in I2C / SPI CS | SPI input, active low. |
 
-The Phase 4 selector is a temporary bootstrap interface, not the final host
-configuration protocol. The exact SPI-like loader assignment and behavior must be
-implemented in Phase 5 before transducer modes and fault injection depend on it.
+After a valid loaded program resumes, its compiler bindings may use any `uio` bit,
+subject to static output-ownership and open-drain checks. During `BEGIN`, loading,
+or an explicit halt, the loaded runtime releases every `uio` output. The legacy
+mapping below remains the power-on fallback and regression fixture.
 
 ## 3. Per-protocol pin usage within a port (Port A shown; Port B mirrors)
 
@@ -66,6 +71,7 @@ construction, not by testing coincidence.
 ## 5. Status of this document
 
 The wrapper names and widths in §1 have been verified against the checked-out
-Tiny Tapeout template. The UART and Port B assignments in §2 match the Phase 4
-RTL. The host loader remains a documented Phase 5 item; no final v1 loader
-behavior is claimed by this checkpoint.
+Tiny Tapeout template. The UART and Port B fallback assignments and the Phase 5
+configuration pins in §2 match the current RTL. The loader command encoding is
+fixed in `PHASE5_ABI_PROPOSAL.md`; Phase 6 may add status/trace commands but must
+not silently move these pins.

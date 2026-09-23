@@ -56,10 +56,25 @@ data-dependent or contention-dependent as a correctness bug, not a style issue (
 
 ## 3. Shared execution engine
 
-A single shared datapath used by all reaction cells, scheduled (earliest-deadline
-or fixed-priority — pick whichever is simpler to implement correctly and verify;
-log the choice in `decisions.md`) whenever a cell needs bookkeeping work done
-between firing and its next state being ready.
+A shared execution block serves both reaction cells whenever a cell needs
+bookkeeping work between firing and its next state being ready. The accepted
+Phase 5 checkpoint uses one descriptor-memory read port with pending-first
+arbitration. Simultaneous cells still commit their locally predecoded actions on
+the same fixed-latency edge; one descriptor reload occurs on that edge and the
+deferred reload is guaranteed the following edge, before any new request. Thus
+rearm latency is at most two inclusive cycles without making reaction latency
+contention-dependent.
+
+A deferred cell is unarmed during its reload edge, so an external event arriving
+on that edge is not captured. Until the DSL can declare and prove protocol timing
+requirements, a two-context manifest therefore records a minimum safe two-cycle
+inter-event spacing assumption rather than claiming unconditional schedulability.
+
+The small counter/shift successor calculation is retained per context in this
+checkpoint so both next-state decisions are captured on a simultaneous fire. The
+logic costs 276 generic cells, versus 9,214 for the descriptor loader, and avoids
+adding another queued sample/control record. Revisit that trade only if physical
+hardening shows it is worthwhile.
 
 Starting components:
 
@@ -98,8 +113,9 @@ Starting components:
 Starting point (verify and adjust via synthesis, per the note at the top of this
 document):
 
-- 128 state descriptors (program/configuration memory for reaction cell states).
-- Small program/configuration SRAM.
+- 32 fixed 128-bit state descriptors (4,096 bits), runtime-writable as eight
+  16-bit words per descriptor. This replaces the original 128-entry synthesis
+  starting point after the measured comparison in `PHASE5_ABI_PROPOSAL.md`.
 - 32–64 compressed trace entries (supports both `SPEC.md` §9's contract-violation
   capture and §10's capture/replay trace buffer — these can likely share the same
   physical buffer; if implemented separately, log why in `decisions.md`).
@@ -119,6 +135,14 @@ and the execution engine, and would reintroduce exactly the "generic processor w
 GPIO instructions" architecture rejected in `SPEC.md` §4. If a future need seems to
 require more than this interface can do, treat that as a signal to revisit the
 *protocol/mode design*, not to grow the configuration interface into a CPU.
+
+The Phase 5 interface samples active-low CS, serial clock, and MOSI on dedicated
+inputs, with MISO on `uo_out[0]` while CS is active. Thirty-two-bit MSB-first
+frames are synchronized into the 50 MHz system domain, so configuration SCLK is
+limited to less than one quarter of the system clock (12.5 MHz at the current
+target). `BEGIN` halts execution before writes; `COMMIT` checks complete ordered
+records, CRC, context entries, and all successor targets; a separate `CONTROL`
+frame resumes a valid program.
 
 ## 7. Fault injection hardware
 
@@ -158,10 +182,26 @@ I2C SDA/SCL output enable is clamped to low-only at the top-level output stage;
 the I2C program can request a low drive or release but cannot produce a driven
 high. SPI MISO is additionally gated off whenever synchronized CS is high, so a
 truncated transaction releases the output before the next transaction. The
-temporary selectors and descriptor sources will be replaced by the host loader
-in Phase 5; they are not the final program-memory implementation.
+temporary selectors and descriptor sources remain only as a reset-time fallback
+for Phase 4 regression. Receipt of a Phase 5 `BEGIN` frame transfers the
+bidirectional pins to the loaded runtime and releases them while loading/halted.
 
-## 10. What to build in what order (mirrors `IMPLEMENTATION.md`, restated here for
+## 10. Phase 5 loader/runtime checkpoint
+
+The compiler emits the accepted 32 × 128-bit descriptor format and a CRC-protected
+loader stream for protocol-only programs. Two generic reaction cells execute the
+loaded descriptors. Their event/action fast paths are independent; descriptor
+rearm shares one read port using the bounded pending-first policy in §3. The final
+output stage masks values on compiler-declared open-drain pins, making an active
+high drive structurally impossible even for malformed descriptor action bits.
+
+Unit simulation covers frame synchronization and partial-frame recovery, ordered
+writes, CRC and target rejection, compiler-stream loading, event/timeout execution,
+simultaneous two-context arbitration, halt-time pin release, and full top-level
+serial loading. Generic synthesis reports 12,344 cells. This is not a physical-fit
+claim; IHP hardening is still required.
+
+## 11. What to build in what order (mirrors `IMPLEMENTATION.md`, restated here for
 build-time reference)
 
 1. One reaction cell + shared execution engine minimum viable slice, UART only.
