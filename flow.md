@@ -239,3 +239,19 @@ Verilog regressions and returned success without invoking cocotb. The Makefile n
 sets `sim` as its explicit default goal; `make phase5` remains available for the
 focused RTL regressions, while the unchanged workflow’s `make` produces the JUnit
 results file expected by its summary and artifact steps.
+
+## 2026-09-27 — Establish the local verification gate
+
+The current checkout was verified without GitHub Actions: all 20 host-toolchain
+tests passed, all five standalone Phase 5 Icarus benches passed, and the Phase 4
+smoke bench reported UART baseline, I2C ACK/NACK, SPI response/abort, and two-cell
+coverage. Verilator lint passed, and local Yosys synthesis completed with a
+15,431-cell mapped hierarchy count; this remains a generic directional number.
+
+The repository now has `scripts/local-verify.sh`, `config.local.json`, and
+`scripts/local-harden.sh` so iteration can stay local until the final hosted gate.
+The local machine has LibreLane itself but does not currently have the IHP SG13C5L
+PDK or native OpenROAD/KLayout/Magic binaries, so the full local GDS run remains
+blocked on those environment dependencies. Cocotb is also not installed in the
+active Python environment; the script requires it explicitly when
+`RUN_COCOTB=1` is requested instead of silently claiming that stage passed.

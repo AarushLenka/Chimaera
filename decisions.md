@@ -165,3 +165,22 @@ now checks model-to-RTL behavior for 256 cycles, including timeout, edge, and
 pending-reload paths when the seed reaches them. Mutations and contracts remain
 host-only until their Phase 6 hardware records are defined.
 **Status:** proposed
+
+## 2026-09-27 — Use explicit local verification before hosted hardening
+
+**Context:** The push-triggered GDS workflow runs the full IHP build, precheck,
+gate-level test, and viewer jobs remotely, which makes short RTL/compiler
+iterations unnecessarily slow.
+**Decision:** Add a dependency-free `scripts/local-verify.sh` gate covering the
+host tests, standalone RTL benches, smoke simulation, Verilator lint, and Yosys
+synthesis. Add a separate `scripts/local-harden.sh` entry point and checked-in
+LibreLane configuration for native IHP hardening; keep the hosted workflow as the
+final remote gate after local work is complete.
+**Alternatives considered:** Running every iteration through GitHub Actions would
+preserve remote coverage but impose the current queue and hardening time on every
+commit. Treating generic Yosys output as a substitute for IHP hardening would not
+provide physical area, routing, or timing evidence.
+**Consequences:** Local commits can be verified without pushing. Full local GDS
+still depends on the IHP SG13C5L PDK and native OpenROAD/KLayout/Magic tools;
+missing dependencies fail explicitly rather than being mistaken for RTL results.
+**Status:** confirmed by Hausen

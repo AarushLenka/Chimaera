@@ -19,6 +19,29 @@ To learn more and get started, visit https://tinytapeout.com.
 
 The GitHub action will automatically build the ASIC files using [LibreLane](https://www.zerotoasiccourse.com/terminology/librelane/).
 
+## Local verification and hardening
+
+Run the fast local gate before committing RTL or host-tool changes:
+
+```sh
+bash scripts/local-verify.sh
+```
+
+This runs the dependency-free host tests, standalone RTL benches, Phase 4 smoke
+simulation, Verilator lint, and generic Yosys synthesis. If a cocotb environment
+is available, include it explicitly with `RUN_COCOTB=1 bash scripts/local-verify.sh`.
+
+The local LibreLane entry point is:
+
+```sh
+bash scripts/local-harden.sh
+```
+
+It requires the native LibreLane tools and the IHP SG13C5L PDK in `PDK_ROOT`.
+The checked-in `config.local.json` mirrors the project hardening settings while
+leaving the generated `runs/` output untracked. The GitHub GDS workflow remains
+the final hosted gate after the local hardening result is reviewed.
+
 ## Enable GitHub actions to build the results page
 
 - [Enabling GitHub Pages](https://tinytapeout.com/faq/#my-github-action-is-failing-on-the-pages-part)
