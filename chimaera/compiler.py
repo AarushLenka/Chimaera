@@ -520,7 +520,7 @@ def _waveform(ir: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _randomized_test(object_bytes: bytes, program_crc: int) -> str:
+def _randomized_test(object_bytes: bytes, program_crc: int, chip_loadable: bool) -> str:
     encoded = base64.b64encode(object_bytes).decode("ascii")
     seed = program_crc ^ 0xC41A_E2A5
     return f'''"""Generated deterministic randomized test for a Chimaera host object."""
@@ -535,11 +535,14 @@ if (Path.cwd() / "chimaera").is_dir():
     sys.path.insert(0, str(Path.cwd()))
 
 from chimaera import ChipReferenceModel, load_host_object
+from chimaera.backend import pack_program
+from chimaera.rtl_replay import run_runtime_replay
 
 
 OBJECT = base64.b64decode("{encoded}")
 SEED = {seed}
 STEPS = 256
+CHIP_LOADABLE = {chip_loadable!r}
 
 
 def replay():
@@ -549,16 +552,37 @@ def replay():
     model = ChipReferenceModel(loaded)
     random_source = random.Random(SEED)
     trace = []
+    rtl_trace = []
+    previous_inputs = 0
     for _ in range(STEPS):
-        result = model.step(random_source.randrange(256))
+        synchronized_inputs = random_source.randrange(256)
+        rising_edges = (~previous_inputs & synchronized_inputs) & 0xff
+        falling_edges = (previous_inputs & ~synchronized_inputs) & 0xff
+        result = model.step(synchronized_inputs)
         assert not (
             result.drive_value & result.drive_enable & model.open_drain_mask
         ), "open-drain pin was actively driven high"
+        contexts = list(result.contexts.values())
+        context_0 = contexts[0]
+        context_1 = contexts[1] if len(contexts) > 1 else None
+        rtl_trace.append((
+            synchronized_inputs,
+            rising_edges,
+            falling_edges,
+            context_0.drive_value,
+            context_0.drive_enable,
+            context_1.drive_value if context_1 is not None else 0,
+            context_1.drive_enable if context_1 is not None else 0,
+        ))
         trace.append((
             result.drive_value,
             result.drive_enable,
             tuple((name, step.state_after, step.fired) for name, step in result.contexts.items()),
         ))
+        previous_inputs = synchronized_inputs
+    if CHIP_LOADABLE:
+        rtl_output = run_runtime_replay(pack_program(loaded.ir), rtl_trace)
+        assert "PASS: generated runtime replay" in rtl_output, rtl_output
     return trace
 
 
@@ -678,7 +702,6 @@ def compile_source(
             ),
         },
         "outstanding": [
-            "Connect generated randomized tests directly to RTL replay",
             "Add DSL timing requirements and discharge the inter-event spacing assumption",
             "Lower mutations and contracts into the reference model and hardware records",
             "Lower pattern events, seeded random_bits conditions, and bidirectional direction changes",
@@ -690,6 +713,6 @@ def compile_source(
         object_bytes,
         _diagram(ir),
         _waveform(ir),
-        _randomized_test(object_bytes, crc),
+        _randomized_test(object_bytes, crc, packed_program is not None),
         packed_program,
     )

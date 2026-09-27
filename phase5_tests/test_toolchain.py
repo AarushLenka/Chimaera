@@ -23,6 +23,40 @@ BINDINGS = {
     "pulse_ack.request": "uio[0]",
     "pulse_ack.response": "uio[1]",
 }
+TWO_CONTEXT_SOURCE = """
+protocol left {
+    pin trigger input
+    pin response output
+    state idle {
+        on rise(trigger) {
+            drive response high
+            goto wait_low
+        }
+    }
+    state wait_low {
+        on fall(trigger) {
+            drive response low
+            goto idle
+        }
+    }
+}
+protocol right {
+    pin trigger input
+    pin response output
+    state idle {
+        on rise(trigger) {
+            drive response high
+            goto wait_low
+        }
+    }
+    state wait_low {
+        on fall(trigger) {
+            drive response low
+            goto idle
+        }
+    }
+}
+"""
 
 
 class ParserTests(unittest.TestCase):
@@ -103,6 +137,36 @@ class CompilerTests(unittest.TestCase):
 
     def test_generated_randomized_model_test_replays_deterministically(self) -> None:
         compilation = self.compile_example()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            exec(compilation.randomized_test, {"__name__": "__generated_test__"})
+        self.assertIn("PASS: 256 randomized cycles", output.getvalue())
+
+    def test_generated_randomized_test_replays_chip_loadable_program_in_rtl(self) -> None:
+        compilation = compile_source(
+            LOADER_EXAMPLE.read_text(encoding="utf-8"),
+            clock_hz=50_000_000,
+            bindings={
+                "loader_pulse.request": "uio[0]",
+                "loader_pulse.response": "uio[1]",
+            },
+        )
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            exec(compilation.randomized_test, {"__name__": "__generated_test__"})
+        self.assertIn("PASS: 256 randomized cycles", output.getvalue())
+
+    def test_generated_randomized_test_replays_two_context_arbitration_in_rtl(self) -> None:
+        compilation = compile_source(
+            TWO_CONTEXT_SOURCE,
+            clock_hz=50_000_000,
+            bindings={
+                "left.trigger": "uio[0]",
+                "left.response": "uio[1]",
+                "right.trigger": "uio[4]",
+                "right.response": "uio[5]",
+            },
+        )
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             exec(compilation.randomized_test, {"__name__": "__generated_test__"})
