@@ -216,3 +216,16 @@ Phase 5 is not yet complete under `IMPLEMENTATION.md`: Hausen still needs to wri
 and compile a small DSL program personally. Direct randomized-test replay against
 RTL also remains a useful strengthening task, while mutations/contracts belong to
 Phase 6.
+
+## 2026-09-27 — Connect generated replay to the loaded RTL runtime
+
+The next Phase 5 gap was addressed without changing the runtime ABI: generated
+randomized tests now derive synchronized input, rising-edge, and falling-edge
+traces, compare the reference model's two context outputs, and feed the same
+trace into an Icarus simulation of `chimaera_program_runtime` with the packed
+descriptors. A chip-loadable `loader_pulse` replay covers 256 deterministic
+cycles; the existing contract-bearing `pulse_ack` artifact remains model-only
+because contracts are intentionally deferred to Phase 6. The host suite and all
+standalone Phase 5 RTL tests should remain the next verification gate. Hausen
+still needs to write and compile a small DSL program personally before Phase 5's
+documented completion criterion is met.

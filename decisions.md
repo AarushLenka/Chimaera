@@ -146,3 +146,22 @@ omitted four-row sizes and was stale relative to the current support-tools table
 **Consequences:** The next GDS run will target the intended 24-tile die area and
 will provide the first meaningful physical utilization/timing result for Phase 5.
 **Status:** confirmed by Hausen
+
+## 2026-09-27 — Replay chip-loadable randomized traces against RTL
+
+**Context:** The Phase 5 compiler already generated deterministic randomized
+reference-model traces, but its manifest still listed direct RTL replay as an
+unverified gap.
+**Decision:** Add a dependency-free Icarus bridge that drives the packed
+descriptor runtime at its synchronized-input boundary and compares both context
+outputs on every generated cycle. Keep asynchronous input synchronization and
+serial loading covered by their existing focused RTL tests.
+**Alternatives considered:** Rebuilding a full serial-loader and asynchronous
+pin test for every randomized case would duplicate the existing top-level test,
+make failures harder to localize, and add substantial simulation time. Comparing
+only the reference model would leave the compiler-to-runtime ABI untested.
+**Consequences:** Every generated randomized test for a chip-loadable program
+now checks model-to-RTL behavior for 256 cycles, including timeout, edge, and
+pending-reload paths when the seed reaches them. Mutations and contracts remain
+host-only until their Phase 6 hardware records are defined.
+**Status:** proposed

@@ -245,7 +245,10 @@ the compiler must emit, per `SPEC.md` §13:
 The compiler emits a deterministic `chimaera-host-ir-v1` object, proof manifest,
 Graphviz state diagram, textual event/action expectation, and fixed-seed randomized
 reference-model test. A CRC-validating host-object reader and two-context reference
-model consume the same IR.
+model consume the same IR. For chip-loadable sources, the generated randomized
+test also replays its synchronized input and edge trace against the Icarus runtime
+and compares both context outputs cycle by cycle; focused RTL tests continue to
+cover serial loading and asynchronous input synchronization.
 
 When a source contains only features supported by the accepted v1 descriptor ABI,
 the compiler also emits `.loader.bin` and marks the manifest
