@@ -236,6 +236,8 @@ err toward asking.
 - Never add Codex, another AI agent, or an AI vendor as a collaborator,
   contributor, co-author, or attribution. Do not add `Co-authored-by`,
   `Assisted-by`, `Generated-by`, or similar AI-related commit trailers or prose.
+- Whenever creating a commit, never identify yourself or any AI system as a
+  contributor, co-author, or other attribution in the commit metadata or message.
 - Local commits are allowed when Hausen requests project work or commits, but do
   not push automatically. After the relevant commits and verification are ready,
   tell Hausen exactly what is committed and that it is ready to push. Push only
