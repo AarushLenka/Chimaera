@@ -184,3 +184,19 @@ provide physical area, routing, or timing evidence.
 still depends on the IHP SG13C5L PDK and native OpenROAD/KLayout/Magic tools;
 missing dependencies fail explicitly rather than being mistaken for RTL results.
 **Status:** confirmed by Hausen
+
+## 2026-09-27 — Make hosted GDS hardening manual-only
+
+**Context:** The full hosted GDS, precheck, gate-level, and viewer chain is too
+slow to run on every development push now that the local verification gate is
+available.
+**Decision:** Remove the `push` trigger from `.github/workflows/gds.yaml` and
+retain `workflow_dispatch`; run the hosted chain manually after local hardening
+has been reviewed.
+**Alternatives considered:** Keeping the push trigger would continue imposing the
+remote hardening delay on every commit. Removing the workflow entirely would lose
+the final independent hosted check and its generated artifacts.
+**Consequences:** Ordinary pushes do not start the long GDS workflow. The final
+IHP-backed hosted check remains one deliberate manual action and is not replaced
+by generic Yosys results.
+**Status:** confirmed by Hausen

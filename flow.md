@@ -255,3 +255,7 @@ PDK or native OpenROAD/KLayout/Magic binaries, so the full local GDS run remains
 blocked on those environment dependencies. Cocotb is also not installed in the
 active Python environment; the script requires it explicitly when
 `RUN_COCOTB=1` is requested instead of silently claiming that stage passed.
+
+The GDS workflow is now manual-only. This keeps the full hosted IHP hardening,
+precheck, gate-level simulation, and viewer chain available as a final independent
+check without making every development push wait for it.
