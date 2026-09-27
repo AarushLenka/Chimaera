@@ -229,3 +229,13 @@ because contracts are intentionally deferred to Phase 6. The host suite and all
 standalone Phase 5 RTL tests should remain the next verification gate. Hausen
 still needs to write and compile a small DSL program personally before Phase 5's
 documented completion criterion is met.
+
+## 2026-09-27 — Restore the original test workflow’s Make default
+
+The restored GitHub test workflow reported a failure in `Test Summary`, not in the
+test command: `test/results.xml` was missing. The first target in `test/Makefile`
+was the standalone `phase5` target, so an unqualified `make` ran the dependency-free
+Verilog regressions and returned success without invoking cocotb. The Makefile now
+sets `sim` as its explicit default goal; `make phase5` remains available for the
+focused RTL regressions, while the unchanged workflow’s `make` produces the JUnit
+results file expected by its summary and artifact steps.

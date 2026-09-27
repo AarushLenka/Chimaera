@@ -2,6 +2,8 @@
 # See https://docs.cocotb.org/en/stable/quickstart.html for more info
 
 # defaults
+.DEFAULT_GOAL := sim
+
 SIM ?= icarus
 FST ?= -fst # Use more efficient FST format
 TOPLEVEL_LANG ?= verilog
