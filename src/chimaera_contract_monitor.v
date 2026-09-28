@@ -37,7 +37,8 @@ module chimaera_contract_monitor (
   reg [31:0] trace_memory [0:3];
   reg [1:0]  trace_pointer;
   integer pin_index;
-  integer record_index;
+  integer combinational_record_index;
+  integer sequential_record_index;
   reg        violation_now;
   reg [3:0]  violation_now_id;
   reg [2:0]  violation_now_kind;
@@ -72,49 +73,49 @@ module chimaera_contract_monitor (
     violation_now = 1'b0;
     violation_now_id = 4'h0;
     violation_now_kind = 3'd0;
-    for (record_index = 0; record_index < 8; record_index = record_index + 1) begin
-      if (contract_records[record_index][31] === 1'b1 && !violation_now) begin
-        case (contract_records[record_index][30:28])
+    for (combinational_record_index = 0; combinational_record_index < 8; combinational_record_index = combinational_record_index + 1) begin
+      if (contract_records[combinational_record_index][31] === 1'b1 && !violation_now) begin
+        case (contract_records[combinational_record_index][30:28])
           3'd1: begin // stable(pin_a) while pin_b == edge_a[0]
-            if (!contract_records[record_index][27] && !contract_records[record_index][23] &&
-                sync_inputs[contract_records[record_index][22:20]] == contract_records[record_index][18] &&
-                (rise_edges[contract_records[record_index][26:24]] || fall_edges[contract_records[record_index][26:24]])) begin
+            if (!contract_records[combinational_record_index][27] && !contract_records[combinational_record_index][23] &&
+                sync_inputs[contract_records[combinational_record_index][22:20]] == contract_records[combinational_record_index][18] &&
+                (rise_edges[contract_records[combinational_record_index][26:24]] || fall_edges[contract_records[combinational_record_index][26:24]])) begin
               violation_now = 1'b1;
-              violation_now_id = record_index[3:0];
+              violation_now_id = combinational_record_index[3:0];
               violation_now_kind = 3'd1;
             end
           end
           3'd2: begin // high_width(pin_a) >= duration
-            if (!contract_records[record_index][27] && fall_edges[contract_records[record_index][26:24]] &&
-                high_active[contract_records[record_index][26:24]] &&
-                high_count[contract_records[record_index][26:24]] < contract_records[record_index][15:0]) begin
+            if (!contract_records[combinational_record_index][27] && fall_edges[contract_records[combinational_record_index][26:24]] &&
+                high_active[contract_records[combinational_record_index][26:24]] &&
+                high_count[contract_records[combinational_record_index][26:24]] < contract_records[combinational_record_index][15:0]) begin
               violation_now = 1'b1;
-              violation_now_id = record_index[3:0];
+              violation_now_id = combinational_record_index[3:0];
               violation_now_kind = 3'd2;
             end
           end
           3'd3: begin // high_width(pin_a) <= duration
-            if (!contract_records[record_index][27] && high_active[contract_records[record_index][26:24]] &&
-                high_count[contract_records[record_index][26:24]] >= contract_records[record_index][15:0] &&
-                !width_reported[record_index]) begin
+            if (!contract_records[combinational_record_index][27] && high_active[contract_records[combinational_record_index][26:24]] &&
+                high_count[contract_records[combinational_record_index][26:24]] >= contract_records[combinational_record_index][15:0] &&
+                !width_reported[combinational_record_index]) begin
               violation_now = 1'b1;
-              violation_now_id = record_index[3:0];
+              violation_now_id = combinational_record_index[3:0];
               violation_now_kind = 3'd3;
             end
           end
           3'd4: begin // target event within duration after source event
-            if (event_armed[record_index] && event_timer[record_index] == 16'd0 &&
-                !event_reported[record_index]) begin
+            if (event_armed[combinational_record_index] && event_timer[combinational_record_index] == 16'd0 &&
+                !event_reported[combinational_record_index]) begin
               violation_now = 1'b1;
-              violation_now_id = record_index[3:0];
+              violation_now_id = combinational_record_index[3:0];
               violation_now_kind = 3'd4;
             end
           end
           3'd5: begin // not(pin_a == edge_a[0])
-            if (!contract_records[record_index][27] && sync_inputs[contract_records[record_index][26:24]] == contract_records[record_index][18] &&
-                !negative_reported[record_index]) begin
+            if (!contract_records[combinational_record_index][27] && sync_inputs[contract_records[combinational_record_index][26:24]] == contract_records[combinational_record_index][18] &&
+                !negative_reported[combinational_record_index]) begin
               violation_now = 1'b1;
-              violation_now_id = record_index[3:0];
+              violation_now_id = combinational_record_index[3:0];
               violation_now_kind = 3'd5;
             end
           end
@@ -140,10 +141,10 @@ module chimaera_contract_monitor (
       trace_pointer <= 2'd0;
       for (pin_index = 0; pin_index < 8; pin_index = pin_index + 1)
         high_count[pin_index] <= 16'd0;
-      for (record_index = 0; record_index < 8; record_index = record_index + 1)
-        event_timer[record_index] <= 16'd0;
-      for (record_index = 0; record_index < 4; record_index = record_index + 1)
-        trace_memory[record_index] <= 32'd0;
+      for (sequential_record_index = 0; sequential_record_index < 8; sequential_record_index = sequential_record_index + 1)
+        event_timer[sequential_record_index] <= 16'd0;
+      for (sequential_record_index = 0; sequential_record_index < 4; sequential_record_index = sequential_record_index + 1)
+        trace_memory[sequential_record_index] <= 32'd0;
     end else begin
       release_pulse <= 1'b0;
       if (enabled) begin
@@ -167,27 +168,27 @@ module chimaera_contract_monitor (
           end
         end
 
-        for (record_index = 0; record_index < 8; record_index = record_index + 1) begin
-          if (contract_records[record_index][31] === 1'b1 && contract_records[record_index][30:28] == 3'd4) begin
-            if (edge_seen(contract_records[record_index][17:16], rise_edges, fall_edges, contract_records[record_index][22:20])) begin
-              event_armed[record_index] <= 1'b1;
-              event_timer[record_index] <= contract_records[record_index][15:0];
-              event_reported[record_index] <= 1'b0;
-            end else if (event_timer[record_index] != 16'd0 &&
-                         edge_seen(contract_records[record_index][19:18], rise_edges, fall_edges, contract_records[record_index][26:24])) begin
-              event_armed[record_index] <= 1'b0;
-              event_timer[record_index] <= 16'd0;
-            end else if (event_armed[record_index] && event_timer[record_index] != 16'd0) begin
-              event_timer[record_index] <= event_timer[record_index] - 16'd1;
+        for (sequential_record_index = 0; sequential_record_index < 8; sequential_record_index = sequential_record_index + 1) begin
+          if (contract_records[sequential_record_index][31] === 1'b1 && contract_records[sequential_record_index][30:28] == 3'd4) begin
+            if (edge_seen(contract_records[sequential_record_index][17:16], rise_edges, fall_edges, contract_records[sequential_record_index][22:20])) begin
+              event_armed[sequential_record_index] <= 1'b1;
+              event_timer[sequential_record_index] <= contract_records[sequential_record_index][15:0];
+              event_reported[sequential_record_index] <= 1'b0;
+            end else if (event_timer[sequential_record_index] != 16'd0 &&
+                         edge_seen(contract_records[sequential_record_index][19:18], rise_edges, fall_edges, contract_records[sequential_record_index][26:24])) begin
+              event_armed[sequential_record_index] <= 1'b0;
+              event_timer[sequential_record_index] <= 16'd0;
+            end else if (event_armed[sequential_record_index] && event_timer[sequential_record_index] != 16'd0) begin
+              event_timer[sequential_record_index] <= event_timer[sequential_record_index] - 16'd1;
             end
           end
 
-          if (contract_records[record_index][31] === 1'b1 && contract_records[record_index][30:28] == 3'd3 &&
-              (!high_active[contract_records[record_index][26:24]] || fall_edges[contract_records[record_index][26:24]]))
-            width_reported[record_index] <= 1'b0;
-          if (contract_records[record_index][31] === 1'b1 && contract_records[record_index][30:28] == 3'd5 &&
-              sync_inputs[contract_records[record_index][26:24]] != contract_records[record_index][18])
-            negative_reported[record_index] <= 1'b0;
+          if (contract_records[sequential_record_index][31] === 1'b1 && contract_records[sequential_record_index][30:28] == 3'd3 &&
+              (!high_active[contract_records[sequential_record_index][26:24]] || fall_edges[contract_records[sequential_record_index][26:24]]))
+            width_reported[sequential_record_index] <= 1'b0;
+          if (contract_records[sequential_record_index][31] === 1'b1 && contract_records[sequential_record_index][30:28] == 3'd5 &&
+              sync_inputs[contract_records[sequential_record_index][26:24]] != contract_records[sequential_record_index][18])
+            negative_reported[sequential_record_index] <= 1'b0;
         end
 
         if (violation_now) begin

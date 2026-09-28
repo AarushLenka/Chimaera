@@ -382,3 +382,17 @@ at the failure and could invalidate the physical gate.
 **Consequences:** The next hosted run may still fail, but it will expose the
 precise undriven-net or combinational-loop evidence needed for a focused fix.
 **Status:** proposed
+
+## 2026-09-28 — Separate contract-monitor loop indices
+
+**Context:** Hosted run 22 identified two pre-synthesis check errors in
+`chimaera_contract_monitor`: the clocked and combinational loops shared the
+module-level `record_index`, producing conflicting constant drivers on the
+Yosys loop-counter register.
+**Decision:** Use distinct loop indices for the combinational contract scan
+and the clocked state-update loops. Keep the synthesis checker enabled and
+rerun the hosted IHP gate.
+**Evidence:** The same two conflicts reproduce before this change with local
+Yosys when all modules are checked, and disappear after the split. All
+standalone Icarus Phase 5 benches remain green.
+**Status:** implemented; hosted verification pending

@@ -372,3 +372,13 @@ errors occur in `06-yosys-synthesis/reports/pre_synth_chk.rpt`: one constant
 cause of the checker failure. The annotations initially exposed only the
 warning headers; the diagnostic now includes the following driver-detail lines
 on the next run.
+
+## 2026-09-28 — Fix hosted pre-synthesis driver conflicts
+
+Run 22 annotations identified both conflicts as the shared `record_index`
+integer in `src/chimaera_contract_monitor.v`: its combinational violation scan
+and clocked update loops drove the same synthesized loop-counter register.
+The loop indices are now separate. Local all-module Yosys reproduction no
+longer reports either constant-driver conflict, and `make -C test phase5`
+passes all standalone Icarus benches. Cocotb and the IHP PDK remain hosted
+validation dependencies.
