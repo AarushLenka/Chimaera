@@ -36,6 +36,7 @@ jobs:
           for report in "${reports[@]}"; do
             echo "::notice title=Yosys report::$report"
             line_number=0
+            detail_lines=0
             while IFS= read -r line; do
               line_number=$((line_number + 1))
               case "$line" in
@@ -44,8 +45,17 @@ jobs:
                   line="${line//$'\r'/'%0D'}"
                   line="${line//$'\n'/'%0A'}"
                   echo "::error file=$report,line=$line_number,title=Yosys check::$line"
+                  detail_lines=8
+                  continue
                   ;;
               esac
+              if ((detail_lines > 0)); then
+                line="${line//'%'/'%25'}"
+                line="${line//$'\r'/'%0D'}"
+                line="${line//$'\n'/'%0A'}"
+                echo "::error file=$report,line=$line_number,title=Yosys detail::$line"
+                detail_lines=$((detail_lines - 1))
+              fi
             done < "$report"
           done
 

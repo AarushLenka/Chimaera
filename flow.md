@@ -364,3 +364,11 @@ Because the hosted job report is not readable in this environment, the GDS job
 now always emits `pre_synth_chk.rpt` and `chk.rpt` warning lines as annotations.
 The next step is to use those exact warnings for the smallest RTL or tool
 configuration fix, then remove this diagnostic once the physical gate is green.
+
+The first diagnostic run (21, commit `2b15deb`) confirmed that the two Yosys
+errors occur in `06-yosys-synthesis/reports/pre_synth_chk.rpt`: one constant
+`1'b0` driver conflict and one constant `1'b1` driver conflict. The final
+`chk.rpt` reported zero problems, so the ABC driving-cell message is not the
+cause of the checker failure. The annotations initially exposed only the
+warning headers; the diagnostic now includes the following driver-detail lines
+on the next run.
