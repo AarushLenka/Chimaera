@@ -352,3 +352,15 @@ cells. No hosted push was made.
 `PDK_ROOT` does not contain `ihp-sg13cmos5l`. Local cocotb is unavailable as
 well. No workflow changes were made; hosted IHP hardening remains the next
 physical checkpoint.
+
+## 2026-09-28 — Add hosted synthesis diagnostics
+
+The pinned IHP Liberty source was checked directly and contains
+`sg13cmos5l_buf_4/X`; the local pre-synthesis Yosys check also reports zero
+problems. A rough local technology-mapped reproduction still showed the ABC
+driving-cell format warning, but its legacy output warnings also appeared on the
+known Phase 5 baseline, so it was not sufficient evidence for an RTL rewrite.
+Because the hosted job report is not readable in this environment, the GDS job
+now always emits `pre_synth_chk.rpt` and `chk.rpt` warning lines as annotations.
+The next step is to use those exact warnings for the smallest RTL or tool
+configuration fix, then remove this diagnostic once the physical gate is green.

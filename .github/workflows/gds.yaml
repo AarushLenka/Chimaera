@@ -18,6 +18,37 @@ jobs:
         with:
           pdk: ihp-sg13cmos5l
 
+      - name: Dump synthesis diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          reports=()
+          while IFS= read -r report; do
+            reports+=("$report")
+          done < <(find runs/wokwi -type f \( -name pre_synth_chk.rpt -o -name chk.rpt \) -print 2>/dev/null)
+
+          if ((${#reports[@]} == 0)); then
+            echo "::warning title=Synthesis diagnostics::No Yosys check reports were produced"
+            exit 0
+          fi
+
+          for report in "${reports[@]}"; do
+            echo "::notice title=Yosys report::$report"
+            line_number=0
+            while IFS= read -r line; do
+              line_number=$((line_number + 1))
+              case "$line" in
+                Warning:*|"Found and reported"*)
+                  line="${line//'%'/'%25'}"
+                  line="${line//$'\r'/'%0D'}"
+                  line="${line//$'\n'/'%0A'}"
+                  echo "::error file=$report,line=$line_number,title=Yosys check::$line"
+                  ;;
+              esac
+            done < "$report"
+          done
+
   precheck:
     needs: gds
     runs-on: ubuntu-24.04

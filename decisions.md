@@ -364,3 +364,21 @@ Use the hosted GDS/precheck/gate-level/viewer chain after the focused change is
 reviewed and pushed, or install the matching PDK/toolchain before retrying
 `scripts/local-harden.sh` locally.
 **Status:** proposed
+
+## 2026-09-28 — Expose hosted synthesis check reports
+
+**Context:** The IHP hardening job stopped at Yosys synthesis checks, but its
+private job log and downloaded report artifact are not readable from the current
+environment. The pinned PDK Liberty file does contain `sg13cmos5l_buf_4` with
+output pin `X`, so changing the driving-cell name without the exact `chk.rpt`
+would be speculative.
+**Decision:** Add an always-run workflow diagnostic that locates
+`pre_synth_chk.rpt` and `chk.rpt` and emits each Yosys warning as a GitHub
+annotation. Keep the synthesis checker enabled and defer RTL/config changes
+until the two actual warnings are visible.
+**Alternatives considered:** Disabling `ERROR_ON_SYNTH_CHECKS`, removing the
+`/X` driving-cell syntax, or rewriting the Phase 6 monitor would hide or guess
+at the failure and could invalidate the physical gate.
+**Consequences:** The next hosted run may still fail, but it will expose the
+precise undriven-net or combinational-loop evidence needed for a focused fix.
+**Status:** proposed
