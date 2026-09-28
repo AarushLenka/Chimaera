@@ -270,3 +270,10 @@ the authoritative gate for future commits. The local LibreLane entry point stays
 available, but local hardening is no longer required for this work loop. Phase 5
 still has one documented human gate—Hausen must personally write and compile a
 small DSL program—before Phase 6 features should begin.
+
+The successful baseline was run 18 (`36326526525`) on `ee9b64d`, before this
+push-trigger restoration commit. Its `gds`, `gl_test`, `precheck`, and `viewer`
+jobs all completed successfully. The GDS job took 2h19m55s, gate-level testing
+took 44s, precheck took 2h12m23s, and viewer publication took 14s. This confirms
+the hosted chain is viable, but it also explains why each push must carry a small,
+focused change: the long wait is dominated by hosted GDS and precheck work.
