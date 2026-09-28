@@ -1,0 +1,20 @@
+protocol hausen_pulse {
+    pin request input
+    pin response output
+
+    state idle {
+        on rise(request) {
+            drive response high
+            count requests
+            goto wait_release
+        }
+    }
+
+    state wait_release {
+        on fall(request) {
+            drive response low
+            goto idle
+        }
+        within 5 cycles else -> idle
+    }
+}

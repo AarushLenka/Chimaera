@@ -8,6 +8,24 @@
 **Consequences:** Documentation, metadata, and the template testbench now use the new project name; no hardware behavior was changed.
 **Status:** confirmed by Hausen
 
+## 2026-09-28 — Close the Phase 5 human DSL checkpoint
+
+**Context:** The Phase 5 implementation requires a human-authored DSL program
+to compile successfully, not only compiler fixtures written during development.
+Hausen wrote `examples/phase5/hausen_pulse.chi` and compiled it with a 50 MHz
+clock and explicit `uio[0]`/`uio[1]` bindings. The compiler produced two states,
+CRC32 `31d7d3a7`, two loader descriptors, and CRC16 `6886`.
+**Decision:** Accept the human DSL usability gate and close the Phase 5
+compiler/loader checkpoint. Track the handwritten source and leave its
+reproducible compiler outputs ignored and local.
+**Alternatives considered:** Reusing an existing example would not demonstrate
+that the DSL is usable by the project owner. Committing generated binaries and
+manifests would add stale build outputs without adding source-level intent.
+**Consequences:** Phase 6 feature work may begin. The current 128-bit descriptor
+ABI remains unchanged until the mutation/fault-injection encoding and control
+interface are explicitly chosen.
+**Status:** confirmed by Hausen
+
 ## 2026-09-22 — Use a descriptor-driven Phase 2 UART slice
 
 **Context:** Phase 2 needs to prove one reaction cell, the shared execution path,

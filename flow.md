@@ -277,3 +277,13 @@ jobs all completed successfully. The GDS job took 2h19m55s, gate-level testing
 took 44s, precheck took 2h12m23s, and viewer publication took 14s. This confirms
 the hosted chain is viable, but it also explains why each push must carry a small,
 focused change: the long wait is dominated by hosted GDS and precheck work.
+
+## 2026-09-28 — Complete the human-written DSL gate
+
+Hausen wrote and compiled `examples/phase5/hausen_pulse.chi`, a two-state
+request/response protocol using explicit `uio[0]` and `uio[1]` bindings. The
+compiler reported two states with program CRC32 `31d7d3a7`; the chip-loader
+stream contained two descriptors with CRC16 `6886`. This closes the remaining
+human-authored Phase 5 criterion. The generated `.chobj`, loader, manifest,
+random-test, graph, and waveform files remain ignored build products. Phase 6
+now starts at the unresolved mutation/fault-injection hardware ABI decision.
