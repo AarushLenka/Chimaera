@@ -313,3 +313,42 @@ covered.
 
 The expanded local checks pass: 26 dependency-free host tests, six standalone
 Icarus benches, and Verilator lint. No hosted push was made.
+
+## 2026-09-28 — Implement remaining Phase 6 fault records and timing contracts
+
+Phase 6 resumed with the five remaining requested fault forms: NACK/drop,
+pin-low holds, duplicated actions, late release, and timing contracts. The
+descriptor stayed at 128 bits. The compiler/backend now emits effect kinds
+`3..7` through the existing four-record mutation table, with physical pin
+selection in the low three bits for pin faults. A new `WRITE_CONTRACT` loader
+opcode carries four compact timing records per context. The runtime monitor
+evaluates stable-while, high-width minimum/maximum, event-within, and negative
+conditions; it records a first violation ID/timestamp, increments a counter,
+freezes a four-entry window, raises the loaded-path trigger on `uo_out[7]`, and
+pulses output release for the violating cycle while execution continues.
+
+The reference model and generated RTL replay were updated together. Focused
+replays covered all five mutation effects; the contract-bearing pulse example
+also replayed through RTL, and a deliberate high-width violation produced a
+trigger, violation ID 0, count 1, and zero output-enable for that cycle. The
+full local gate passed 29 host tests, all standalone Icarus benches, Phase 4
+smoke simulation, Verilator lint, and top-level Yosys elaboration/synthesis.
+Yosys reported 35,235 hierarchy cells including submodules, which is above the
+rough 24,000-cell budget and is only directional generic evidence. Phase 6
+feature behavior is covered in simulation, but the phase is not physically
+closed: IHP place-and-route and the remaining transducer/demo evidence are next.
+
+## 2026-09-28 — Tighten timing-contract failure boundaries
+
+The follow-up host test covers a late event-within target, a second contract
+failure, and sticky first-failure ID/timestamp behavior. The corrected local
+gate remains green with 29 host tests, all standalone Icarus benches, Phase 4
+smoke simulation, Verilator lint, and 35,235 directional generic hierarchy
+cells. No hosted push was made.
+
+## 2026-09-28 — Local physical-gate attempt
+
+`scripts/local-harden.sh` was invoked and stopped before synthesis because
+`PDK_ROOT` does not contain `ihp-sg13cmos5l`. Local cocotb is unavailable as
+well. No workflow changes were made; hosted IHP hardening remains the next
+physical checkpoint.

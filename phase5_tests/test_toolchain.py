@@ -165,7 +165,8 @@ class CompilerTests(unittest.TestCase):
         second = self.compile_example()
         self.assertEqual(first.object_bytes, second.object_bytes)
         self.assertTrue(first.object_bytes.startswith(b"CHOBJ\x00\x01"))
-        self.assertFalse(first.manifest["chip_loadable"])
+        self.assertTrue(first.manifest["chip_loadable"])
+        self.assertEqual(first.manifest["timing_contracts"], 1)
         self.assertEqual(first.manifest["maximum_response_latency_cycles"], 1)
         self.assertEqual(first.manifest["owned_pins"], ["uio[1]"])
         self.assertEqual(first.manifest["proofs"]["open_drain_low_only"], "pass")
@@ -351,6 +352,119 @@ protocol timed {
         record = packed.mutation_config[0] & 0xFFFFFFFF
         self.assertEqual((record >> 16) & 0xFFFF, 0xA101)
         self.assertEqual(record & 0xFFFF, 0x02FF)
+
+    def test_phase6_pin_and_refusal_mutations_replay_in_rtl(self) -> None:
+        protocol = """
+protocol fault {
+    pin data input
+    pin response output
+    state idle {
+        on rise(data) {
+            sample data into sample
+            drive response high
+            goto wait
+        }
+    }
+    state wait {
+        on fall(data) {
+            drive response release
+            goto idle
+        }
+    }
+}
+"""
+        for effect in (
+            "nack",
+            "drop byte",
+            "hold response low for 2 cycles",
+            "duplicate edge on response",
+            "release response after 2 extra cycles",
+        ):
+            with self.subTest(effect=effect):
+                compilation = compile_source(
+                    protocol
+                    + f"""
+mutation injected for fault {{
+    when sample == 1
+    {effect}
+}}
+""",
+                    clock_hz=50_000_000,
+                    fault_seed=0xACE1,
+                    bindings={"fault.data": "uio[0]", "fault.response": "uio[1]"},
+                )
+                self.assertTrue(compilation.manifest["chip_loadable"])
+                model = ChipReferenceModel(compilation)
+                trace = []
+                previous = 0
+                for inputs in (0x00, 0x01, 0x00, 0x00, 0x00, 0x00):
+                    rising = (~previous & inputs) & 0xFF
+                    falling = (previous & ~inputs) & 0xFF
+                    result = model.step(inputs)
+                    context = next(iter(result.contexts.values()))
+                    trace.append(
+                        (
+                            inputs,
+                            rising,
+                            falling,
+                            context.drive_value,
+                            context.drive_enable,
+                            0,
+                            0,
+                        )
+                    )
+                    previous = inputs
+                self.assertIn(
+                    "PASS: generated runtime replay",
+                    run_runtime_replay(compilation.packed_program, trace),
+                )
+
+    def test_timing_contract_violation_records_and_releases_outputs(self) -> None:
+        compilation = self.compile_example()
+        self.assertTrue(compilation.manifest["chip_loadable"])
+        self.assertNotEqual(compilation.packed_program.contract_config[0], 0)
+        model = ChipReferenceModel(compilation)
+        # Hold the observed response high beyond the <=4-cycle contract.
+        results = [model.step(inputs) for inputs in (0x00, 0x01, 0x03, 0x03, 0x03, 0x03, 0x03)]
+        violation = next(result for result in results if result.contract_release_pulse)
+        self.assertTrue(violation.contract_trigger)
+        self.assertEqual(violation.contract_violation_id, 0)
+        self.assertEqual(violation.contract_violation_count, 1)
+        self.assertEqual(violation.drive_enable, 0)
+
+    def test_event_contract_deadline_and_first_violation_are_sticky(self) -> None:
+        compilation = compile_source(
+            """
+protocol contracts {
+    pin source input
+    pin target input
+    state idle {
+        on rise(source) -> idle
+    }
+}
+
+contract timing for contracts {
+    assert rise(target) within 2 cycles after rise(source)
+    assert high_width(target) <= 1 cycles
+}
+""",
+            clock_hz=50_000_000,
+            bindings={"contracts.source": "uio[0]", "contracts.target": "uio[1]"},
+        )
+        model = ChipReferenceModel(compilation)
+        results = [
+            model.step(inputs)
+            for inputs in (0x00, 0x01, 0x01, 0x01, 0x03, 0x03, 0x03)
+        ]
+
+        self.assertTrue(results[4].contract_release_pulse)
+        self.assertEqual(results[4].contract_violation_count, 1)
+        self.assertEqual(results[4].contract_violation_id, 0)
+        self.assertEqual(results[4].contract_violation_timestamp, 5)
+        self.assertTrue(results[5].contract_release_pulse)
+        self.assertEqual(results[5].contract_violation_count, 2)
+        self.assertEqual(results[5].contract_violation_id, 0)
+        self.assertTrue(results[5].contract_trace_frozen)
 
     def test_rejects_open_drain_high_drive(self) -> None:
         source = """

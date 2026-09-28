@@ -14,6 +14,8 @@ module program_runtime_tb;
   reg [15:0] fault_seed = 16'h0001;
   reg [127:0] mutation_config_0 = 128'h0;
   reg [127:0] mutation_config_1 = 128'h0;
+  reg [127:0] contract_config_0 = 128'h0;
+  reg [127:0] contract_config_1 = 128'h0;
   wire [4:0] descriptor_address;
   reg [127:0] descriptor_memory [0:3];
   wire [127:0] descriptor_data = descriptor_memory[descriptor_address[1:0]];
@@ -23,6 +25,12 @@ module program_runtime_tb;
   wire [7:0] drive_enable_1;
   wire fire_0;
   wire fire_1;
+  wire contract_trigger;
+  wire [7:0] contract_violation_count;
+  wire [3:0] contract_violation_id;
+  wire [31:0] contract_violation_timestamp;
+  wire contract_release_pulse;
+  wire contract_trace_frozen;
 
   chimaera_program_runtime dut (
       .clk(clk),
@@ -39,12 +47,20 @@ module program_runtime_tb;
       .fault_seed(fault_seed),
       .mutation_config_0(mutation_config_0),
       .mutation_config_1(mutation_config_1),
+      .contract_config_0(contract_config_0),
+      .contract_config_1(contract_config_1),
       .drive_value_0(drive_value_0),
       .drive_enable_0(drive_enable_0),
       .drive_value_1(drive_value_1),
       .drive_enable_1(drive_enable_1),
       .fire_0(fire_0),
-      .fire_1(fire_1)
+      .fire_1(fire_1),
+      .contract_trigger(contract_trigger),
+      .contract_violation_count(contract_violation_count),
+      .contract_violation_id(contract_violation_id),
+      .contract_violation_timestamp(contract_violation_timestamp),
+      .contract_release_pulse(contract_release_pulse),
+      .contract_trace_frozen(contract_trace_frozen)
   );
 
   always #5 clk = ~clk;

@@ -35,6 +35,12 @@ module chimaera_reaction_cell #(
     input  wire [7:0]             load_oe_mask,
     input  wire [7:0]             load_oe_value,
     input  wire [7:0]             fault_delay,
+    input  wire                   fault_suppress,
+    input  wire [7:0]             fault_hold_mask,
+    input  wire [7:0]             fault_hold_cycles,
+    input  wire [7:0]             fault_duplicate_mask,
+    input  wire [7:0]             fault_late_release_mask,
+    input  wire [7:0]             fault_late_release_cycles,
 
     output wire                   fire,
     output wire                   fire_from_timeout,
@@ -72,6 +78,18 @@ module chimaera_reaction_cell #(
   reg [7:0]                   delayed_action_value;
   reg [7:0]                   delayed_oe_mask;
   reg [7:0]                   delayed_oe_value;
+  reg                         duplicate_pending;
+  reg [7:0]                   duplicate_mask;
+  reg [7:0]                   duplicate_value;
+  reg [7:0]                   duplicate_oe_mask;
+  reg [7:0]                   duplicate_oe_value;
+  reg                         hold_pending;
+  reg [7:0]                   hold_mask;
+  reg [7:0]                   hold_timer;
+  reg                         late_release_pending;
+  reg [7:0]                   late_release_mask;
+  reg [7:0]                   late_release_timer;
+  reg [7:0]                   effective_late_mask;
 
   reg event_match;
 
@@ -102,6 +120,10 @@ module chimaera_reaction_cell #(
   assign fire_sample       = sync_inputs & sample_mask;
   assign current_state     = state_id;
 
+  always @(*) begin
+    effective_late_mask = fault_late_release_mask & oe_mask & ~oe_value;
+  end
+
   always @(posedge clk) begin
     if (!rst_n) begin
       active       <= 1'b0;
@@ -123,6 +145,17 @@ module chimaera_reaction_cell #(
       delayed_action_value   <= 8'h00;
       delayed_oe_mask        <= 8'h00;
       delayed_oe_value       <= 8'h00;
+      duplicate_pending      <= 1'b0;
+      duplicate_mask         <= 8'h00;
+      duplicate_value        <= 8'h00;
+      duplicate_oe_mask      <= 8'h00;
+      duplicate_oe_value     <= 8'h00;
+      hold_pending           <= 1'b0;
+      hold_mask              <= 8'h00;
+      hold_timer             <= 8'h00;
+      late_release_pending   <= 1'b0;
+      late_release_mask      <= 8'h00;
+      late_release_timer     <= 8'h00;
       drive_value  <= RESET_DRIVE_VALUE;
       drive_enable <= RESET_DRIVE_ENABLE;
     end else begin
@@ -139,21 +172,77 @@ module chimaera_reaction_cell #(
         end
       end
 
+      if (duplicate_pending) begin
+        drive_value  <= (drive_value & ~duplicate_mask) |
+                        (duplicate_value & duplicate_mask);
+        drive_enable <= (drive_enable & ~duplicate_oe_mask) |
+                        (duplicate_oe_value & duplicate_oe_mask);
+        duplicate_pending <= 1'b0;
+      end
+
+      if (late_release_pending) begin
+        if (late_release_timer <= 8'h01) begin
+          drive_enable <= drive_enable & ~late_release_mask;
+          late_release_pending <= 1'b0;
+          late_release_timer <= 8'h00;
+        end else begin
+          late_release_timer <= late_release_timer - 8'h01;
+        end
+      end
+
+      if (hold_pending) begin
+        drive_value  <= drive_value & ~hold_mask;
+        drive_enable <= drive_enable | hold_mask;
+        if (hold_timer == 8'h00) begin
+          hold_pending <= 1'b0;
+          hold_mask <= 8'h00;
+        end else begin
+          hold_timer <= hold_timer - 8'h01;
+        end
+      end
+
       if (fire) begin
         // This is the fixed-latency fast path.  No result from shared
         // bookkeeping participates in the action being committed here.
-        if (fault_delay == 8'h00) begin
-          drive_value  <= (drive_value  & ~action_mask) |
-                          (action_value &  action_mask);
-          drive_enable <= (drive_enable & ~oe_mask) |
-                          (oe_value     &  oe_mask);
-        end else begin
-          delayed_action_pending <= 1'b1;
-          delayed_action_timer   <= fault_delay;
-          delayed_action_mask    <= action_mask;
-          delayed_action_value   <= action_value;
-          delayed_oe_mask        <= oe_mask;
-          delayed_oe_value       <= oe_value;
+        if (!fault_suppress) begin
+          if (fault_delay == 8'h00) begin
+            drive_value  <= (drive_value  & ~action_mask) |
+                            (action_value &  action_mask);
+            drive_enable <= (drive_enable & ~oe_mask) |
+                            (((oe_value & ~effective_late_mask) |
+                              (drive_enable & effective_late_mask)) & oe_mask);
+          end else begin
+            delayed_action_pending <= 1'b1;
+            delayed_action_timer   <= fault_delay;
+            delayed_action_mask    <= action_mask;
+            delayed_action_value   <= action_value;
+            delayed_oe_mask        <= oe_mask;
+            delayed_oe_value       <= ((oe_value & ~effective_late_mask) |
+                                       (drive_enable & effective_late_mask));
+          end
+
+          if (fault_duplicate_mask != 8'h00) begin
+            duplicate_pending  <= 1'b1;
+            duplicate_mask     <= fault_duplicate_mask & action_mask;
+            duplicate_value    <= action_value;
+            duplicate_oe_mask  <= fault_duplicate_mask & oe_mask;
+            duplicate_oe_value <= ((oe_value & ~effective_late_mask) |
+                                   (drive_enable & effective_late_mask));
+          end
+
+          if (effective_late_mask != 8'h00 && fault_late_release_cycles != 8'h00) begin
+            late_release_pending <= 1'b1;
+            late_release_mask    <= effective_late_mask;
+            late_release_timer   <= fault_delay + fault_late_release_cycles;
+          end
+        end
+
+        if (fault_hold_mask != 8'h00 && fault_hold_cycles != 8'h00) begin
+          hold_pending <= 1'b1;
+          hold_mask    <= fault_hold_mask;
+          hold_timer   <= fault_hold_cycles - 8'h01;
+          drive_value  <= drive_value & ~fault_hold_mask;
+          drive_enable <= drive_enable | fault_hold_mask;
         end
       end
 

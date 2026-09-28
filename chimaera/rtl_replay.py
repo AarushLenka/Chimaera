@@ -86,6 +86,8 @@ module chimaera_generated_replay_tb;
   reg [15:0] fault_seed = 16'h{program.fault_seed:04x};
   reg [127:0] mutation_config_0 = 128'h{program.mutation_config[0]:032x};
   reg [127:0] mutation_config_1 = 128'h{program.mutation_config[1]:032x};
+  reg [127:0] contract_config_0 = 128'h{program.contract_config[0]:032x};
+  reg [127:0] contract_config_1 = 128'h{program.contract_config[1]:032x};
   reg [127:0] descriptor_memory [0:31];
   wire [4:0] descriptor_address;
   wire [127:0] descriptor_data = descriptor_memory[descriptor_address];
@@ -119,6 +121,8 @@ module chimaera_generated_replay_tb;
       .fault_seed(fault_seed),
       .mutation_config_0(mutation_config_0),
       .mutation_config_1(mutation_config_1),
+      .contract_config_0(contract_config_0),
+      .contract_config_1(contract_config_1),
       .drive_value_0(drive_value_0),
       .drive_enable_0(drive_enable_0),
       .drive_value_1(drive_value_1),
@@ -187,6 +191,7 @@ def run_runtime_replay(
     sources = [
         source_dir / "chimaera_reaction_cell.v",
         source_dir / "chimaera_generic_execution_engine.v",
+        source_dir / "chimaera_contract_monitor.v",
         source_dir / "chimaera_program_runtime.v",
     ]
     missing = [str(path) for path in sources if not path.is_file()]

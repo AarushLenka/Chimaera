@@ -27,12 +27,21 @@ module chimaera_program_runtime (
     input  wire [15:0]  fault_seed,
     input  wire [127:0] mutation_config_0,
     input  wire [127:0] mutation_config_1,
+    input  wire [127:0] contract_config_0,
+    input  wire [127:0] contract_config_1,
     output wire [7:0]   drive_value_0,
     output wire [7:0]   drive_enable_0,
     output wire [7:0]   drive_value_1,
     output wire [7:0]   drive_enable_1,
     output wire         fire_0,
-    output wire         fire_1
+    output wire         fire_1,
+    output wire         contract_trigger,
+    output wire [7:0]   contract_violation_count,
+    output wire [3:0]   contract_violation_id,
+    output wire [31:0]  contract_violation_timestamp,
+    output wire         contract_release_pulse,
+    output wire         contract_trace_frozen,
+    output wire [31:0]  contract_trace_latest
 );
 
   wire running = !execution_halted;
@@ -65,6 +74,18 @@ module chimaera_program_runtime (
   wire [7:0] post_shift_1;
   wire [7:0] mutation_delay_0;
   wire [7:0] mutation_delay_1;
+  wire mutation_suppress_0;
+  wire mutation_suppress_1;
+  wire [7:0] mutation_hold_mask_0;
+  wire [7:0] mutation_hold_mask_1;
+  wire [7:0] mutation_hold_cycles_0;
+  wire [7:0] mutation_hold_cycles_1;
+  wire [7:0] mutation_duplicate_mask_0;
+  wire [7:0] mutation_duplicate_mask_1;
+  wire [7:0] mutation_late_release_mask_0;
+  wire [7:0] mutation_late_release_mask_1;
+  wire [7:0] mutation_late_release_cycles_0;
+  wire [7:0] mutation_late_release_cycles_1;
 
   function [15:0] next_lfsr;
     input [15:0] current;
@@ -105,8 +126,26 @@ module chimaera_program_runtime (
 
   assign drive_value_0 = cell_drive_value_0;
   assign drive_value_1 = cell_drive_value_1;
-  assign drive_enable_0 = running ? cell_drive_enable_0 : 8'h00;
-  assign drive_enable_1 = running ? cell_drive_enable_1 : 8'h00;
+  assign drive_enable_0 = (running && !contract_release_pulse) ? cell_drive_enable_0 : 8'h00;
+  assign drive_enable_1 = (running && !contract_release_pulse) ? cell_drive_enable_1 : 8'h00;
+
+  chimaera_contract_monitor contract_monitor (
+      .clk                  (clk),
+      .rst_n                (rst_n),
+      .enabled              (running),
+      .contract_config_0    (contract_config_0),
+      .contract_config_1    (contract_config_1),
+      .sync_inputs          (sync_inputs),
+      .rise_edges           (rise_edges),
+      .fall_edges           (fall_edges),
+      .trigger              (contract_trigger),
+      .violation_count      (contract_violation_count),
+      .violation_id         (contract_violation_id),
+      .violation_timestamp  (contract_violation_timestamp),
+      .trace_frozen         (contract_trace_frozen),
+      .trace_latest         (contract_trace_latest),
+      .release_pulse        (contract_release_pulse)
+  );
 
   always @(posedge clk) begin
     if (!rst_n || !running) begin
@@ -161,6 +200,12 @@ module chimaera_program_runtime (
       .current_shift_0(current_shift_0),
       .post_shift_0(post_shift_0),
       .mutation_delay_0(mutation_delay_0),
+      .mutation_suppress_0(mutation_suppress_0),
+      .mutation_hold_mask_0(mutation_hold_mask_0),
+      .mutation_hold_cycles_0(mutation_hold_cycles_0),
+      .mutation_duplicate_mask_0(mutation_duplicate_mask_0),
+      .mutation_late_release_mask_0(mutation_late_release_mask_0),
+      .mutation_late_release_cycles_0(mutation_late_release_cycles_0),
       .fire_1(fire_1),
       .fire_timeout_1(fire_timeout_1),
       .fire_sample_1(fire_sample_1),
@@ -169,7 +214,13 @@ module chimaera_program_runtime (
       .next_state_1(next_state_1),
       .current_shift_1(current_shift_1),
       .post_shift_1(post_shift_1),
-      .mutation_delay_1(mutation_delay_1)
+      .mutation_delay_1(mutation_delay_1),
+      .mutation_suppress_1(mutation_suppress_1),
+      .mutation_hold_mask_1(mutation_hold_mask_1),
+      .mutation_hold_cycles_1(mutation_hold_cycles_1),
+      .mutation_duplicate_mask_1(mutation_duplicate_mask_1),
+      .mutation_late_release_mask_1(mutation_late_release_mask_1),
+      .mutation_late_release_cycles_1(mutation_late_release_cycles_1)
   );
 
   chimaera_reaction_cell #(
@@ -197,6 +248,12 @@ module chimaera_program_runtime (
       .load_oe_mask(descriptor_data[82:75]),
       .load_oe_value(descriptor_data[90:83]),
       .fault_delay(mutation_delay_0),
+      .fault_suppress(mutation_suppress_0),
+      .fault_hold_mask(mutation_hold_mask_0),
+      .fault_hold_cycles(mutation_hold_cycles_0),
+      .fault_duplicate_mask(mutation_duplicate_mask_0),
+      .fault_late_release_mask(mutation_late_release_mask_0),
+      .fault_late_release_cycles(mutation_late_release_cycles_0),
       .fire(fire_0),
       .fire_from_timeout(fire_timeout_0),
       .fire_sample(fire_sample_0),
@@ -230,6 +287,12 @@ module chimaera_program_runtime (
       .load_oe_mask(descriptor_data[82:75]),
       .load_oe_value(descriptor_data[90:83]),
       .fault_delay(mutation_delay_1),
+      .fault_suppress(mutation_suppress_1),
+      .fault_hold_mask(mutation_hold_mask_1),
+      .fault_hold_cycles(mutation_hold_cycles_1),
+      .fault_duplicate_mask(mutation_duplicate_mask_1),
+      .fault_late_release_mask(mutation_late_release_mask_1),
+      .fault_late_release_cycles(mutation_late_release_cycles_1),
       .fire(fire_1),
       .fire_from_timeout(fire_timeout_1),
       .fire_sample(fire_sample_1),

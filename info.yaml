@@ -29,6 +29,7 @@ project:
     - "chimaera_program_loader.v"
     - "chimaera_host_interface.v"
     - "chimaera_generic_execution_engine.v"
+    - "chimaera_contract_monitor.v"
     - "chimaera_program_runtime.v"
     - "project.v"
 

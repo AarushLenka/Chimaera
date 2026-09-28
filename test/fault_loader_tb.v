@@ -21,6 +21,8 @@ module fault_loader_tb;
   wire [15:0] fault_seed;
   wire [127:0] mutation_config_0;
   wire [127:0] mutation_config_1;
+  wire [127:0] contract_config_0;
+  wire [127:0] contract_config_1;
 
   chimaera_program_loader dut (
       .clk(clk),
@@ -41,7 +43,9 @@ module fault_loader_tb;
       .computed_crc(computed_crc),
       .fault_seed(fault_seed),
       .mutation_config_0(mutation_config_0),
-      .mutation_config_1(mutation_config_1)
+      .mutation_config_1(mutation_config_1),
+      .contract_config_0(contract_config_0),
+      .contract_config_1(contract_config_1)
   );
 
   always #5 clk = ~clk;
@@ -67,17 +71,22 @@ module fault_loader_tb;
     send_frame(32'h5000ace1); // SET_FAULT_SEED 0xace1
     send_frame(32'h60009101); // mutation 0 word 0
     send_frame(32'h600801ff); // mutation 0 word 1
+    send_frame(32'h7000b100); // contract 0 word 0: high-width maximum
+    send_frame(32'h70080004); // contract 0 word 1: four cycles
 
     if (load_error || fault_seed !== 16'hace1 ||
         mutation_config_0[31:16] !== 16'h9101 ||
-        mutation_config_0[15:0] !== 16'h01ff || mutation_config_1 !== 128'h0) begin
-      $display("FAIL: fault records were not loaded: error=%b seed=%04h config=%032h",
-               load_error, fault_seed, mutation_config_0);
+        mutation_config_0[15:0] !== 16'h01ff || mutation_config_1 !== 128'h0 ||
+        contract_config_0[31:16] !== 16'hb100 ||
+        contract_config_0[15:0] !== 16'h0004 || contract_config_1 !== 128'h0) begin
+      $display("FAIL: fault/contract records were not loaded: error=%b seed=%04h mutation=%032h contract=%032h",
+               load_error, fault_seed, mutation_config_0, contract_config_0);
       $fatal(1);
     end
 
     send_frame(32'h00000000); // BEGIN clears the separate fault table.
-    if (fault_seed !== 16'h0001 || mutation_config_0 !== 128'h0 || load_error) begin
+    if (fault_seed !== 16'h0001 || mutation_config_0 !== 128'h0 ||
+        contract_config_0 !== 128'h0 || load_error) begin
       $display("FAIL: BEGIN did not clear fault configuration");
       $fatal(1);
     end
@@ -88,7 +97,7 @@ module fault_loader_tb;
       $fatal(1);
     end
 
-    $display("PASS: seeded fault and mutation records load through the frame ABI");
+    $display("PASS: seeded fault, mutation, and contract records load through the frame ABI");
     $finish;
   end
 endmodule

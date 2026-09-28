@@ -79,8 +79,8 @@ python3 -m chimaera examples/phase5/pulse_ack.chi \
 ```
 
 This emits `.chobj`, `.manifest.json`, `.states.dot`, `.wave.txt`, and
-`.random_test.py` artifacts. The example includes a Phase 6 contract, so its
-manifest remains `chip_loadable: false` until contract hardware lowering exists.
+`.random_test.py` artifacts. Its Phase 6 high-width contract is also lowered into
+the separate contract table and remains replayable through the loaded runtime.
 
 The protocol-only example exercises the accepted 32 × 128-bit chip backend:
 
@@ -96,13 +96,13 @@ two descriptors, pin modes, CRC-checked commit, and resume. The checked-in RTL
 accepts this stream on `ui_in[2]` (active-low CS), `ui_in[3]` (SCLK below
 12.5 MHz), and `ui_in[4]` (MOSI), with MISO on `uo_out[0]` while selected.
 
-The first Phase 6 fault slice preserves the descriptor format and adds separate
-seed/mutation frames. Compile a source containing a supported sampled-variable
-mutation with `--fault-seed 0xACE1`; the emitted loader stream includes the
-non-zero LFSR seed and the four-slot-per-context mutation table. Sampled-value
-bit flips and bounded action delays are implemented; NACK/drop, pin holds,
-duplicate/late edges, and timing contracts remain host-model features until
-their hardware records are implemented.
+The Phase 6 fault path preserves the descriptor format and adds separate
+seed/mutation/contract frames. Compile a source containing a supported
+sampled-variable mutation with `--fault-seed 0xACE1`; the emitted loader stream
+includes the non-zero LFSR seed and the four-slot-per-context mutation table.
+Sampled-value flips, bounded action delays, NACK/drop, pin holds,
+duplicate/late edges, and the supported timing contracts are implemented and
+covered by host-model and RTL replay tests.
 
 Run the host-toolchain checks without third-party Python packages:
 

@@ -160,14 +160,15 @@ The fault stage must never be able to violate the open-drain safety property in
 guarantees apply to fault-modified output as to normal output. This is a hard
 constraint, not a corner case to handle later.
 
-The first Phase 6 implementation keeps this stage separate from the descriptor
-ABI. Each context has four 32-bit mutation records loaded through dedicated
-configuration opcodes, and a shared seeded 16-bit LFSR. The implemented slice
-faults a sampled shift-register value before successor-condition evaluation or
-delays a predecoded pin action by a bounded byte-sized number of clocks.
-Open-drain output drive remains behind the existing low-only mask. Protocol
-refusal/drop, pin hold, edge duplication, and late release still need their own
-records and focused live demos.
+The Phase 6 implementation keeps this stage separate from the descriptor ABI.
+Each context has four 32-bit mutation records loaded through dedicated
+configuration opcodes, and a shared seeded 16-bit LFSR. The fault stage can
+mutate a sampled shift-register value, delay or suppress a predecoded action,
+hold a selected pin low, repeat a selected action, or defer a selected release
+by a bounded byte-sized interval. Open-drain output drive remains behind the
+existing low-only mask, including all fault paths. Pin-targeted records carry
+the bound physical pin in their low three bits; data/action records retain the
+seeded threshold there.
 
 ## 8. Contract/assertion checker
 
@@ -175,7 +176,10 @@ A small comparator/window-logic block that watches the same synchronized signals
 as the reaction cells, evaluates armed temporal assertions (grammar defined in
 `DSL_SPEC.md`), and on violation performs all four actions from `SPEC.md` §9
 (trigger output, freeze trace, record violation + timestamp, release driven pins)
-without halting the reaction cells' continued operation.
+without halting the reaction cells' continued operation. The current compact
+records cover stable-while, high-width minimum/maximum, event-within, and
+negative pin conditions. The monitor uses four trace entries, records the first
+violating record, and releases outputs for one cycle so execution can resume.
 
 ## 9. Phase 4 implementation checkpoint
 
@@ -198,11 +202,13 @@ bidirectional pins to the loaded runtime and releases them while loading/halted.
 ## 10. Phase 5 loader/runtime checkpoint
 
 The compiler emits the accepted 32 × 128-bit descriptor format and a CRC-protected
-loader stream for protocol-only programs. Two generic reaction cells execute the
-loaded descriptors. Their event/action fast paths are independent; descriptor
-rearm shares one read port using the bounded pending-first policy in §3. The final
-output stage masks values on compiler-declared open-drain pins, making an active
-high drive structurally impossible even for malformed descriptor action bits.
+loader stream for protocol and supported Phase 6 sources. Two generic reaction
+cells execute the loaded descriptors. Their event/action fast paths are
+independent; descriptor rearm shares one read port using the bounded pending-first
+policy in §3. Mutation and contract records stay outside the descriptor fast
+path. The final output stage masks values on compiler-declared open-drain pins,
+making an active high drive structurally impossible even for malformed
+descriptor or fault action bits.
 
 Unit simulation covers frame synchronization and partial-frame recovery, ordered
 writes, CRC and target rejection, compiler-stream loading, event/timeout execution,

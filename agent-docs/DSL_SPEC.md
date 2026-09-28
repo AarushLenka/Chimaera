@@ -250,17 +250,19 @@ test also replays its synchronized input and edge trace against the Icarus runti
 and compares both context outputs cycle by cycle; focused RTL tests continue to
 cover serial loading and asynchronous input synchronization.
 
-When a source contains only features supported by the accepted v1 descriptor ABI,
+When a source contains only features supported by the accepted v1 descriptor ABI
+and separate Phase 6 record tables,
 the compiler also emits `.loader.bin` and marks the manifest
 `chip_loadable: true`. The backend lowers conditions through helper descriptors,
 enforces the 32-descriptor post-lowering limit, and emits the exact loader format
-in `PHASE5_ABI_PROPOSAL.md`. The first Phase 6 mutation slice additionally
-lowers `flip bits <mask> in <sampled_variable>` and `delay next action by <N>
-cycles` when their condition is an equality against that same sampled variable
-and the payload fits one byte. The seed and four-record-per-context fault table
-travel in separate loader frames. NACK/drop, pin-hold, duplicate, late-release,
-and contract blocks retain host-model information but remain chip-loadable only
-after their corresponding hardware records exist. Pattern events, seeded
+in `PHASE5_ABI_PROPOSAL.md`. The Phase 6 mutation slice lowers `flip bits <mask>
+in <sampled_variable>`, `delay next action by <N> cycles`, `nack`, `drop byte`,
+`hold <pin> low for <N> cycles`, `duplicate edge on <pin>`, and `release <pin>
+after <N> extra cycles` when their condition is an equality against that same
+sampled variable and the payload fits one byte. The seed and four-record-per-
+context fault table travel in separate loader frames. Supported timing-contract
+assertions also lower into four compact records per context and are evaluated by
+the runtime monitor. Pattern events, seeded
 `random_bits` conditions, and per-state bidirectional direction changes are
 likewise still outstanding.
 The manifest also exposes the loaded runtime's maximum rearm latency and minimum

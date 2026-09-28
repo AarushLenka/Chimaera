@@ -8,7 +8,7 @@ SIM ?= icarus
 FST ?= -fst # Use more efficient FST format
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(CURDIR)/../src
-PROJECT_SOURCES = chimaera_input_frontend.v chimaera_uart_program.v chimaera_i2c_program.v chimaera_spi_program.v chimaera_port_b_program.v chimaera_execution_engine.v chimaera_reaction_cell.v chimaera_config_spi.v chimaera_program_loader.v chimaera_host_interface.v chimaera_generic_execution_engine.v chimaera_program_runtime.v project.v
+PROJECT_SOURCES = chimaera_input_frontend.v chimaera_uart_program.v chimaera_i2c_program.v chimaera_spi_program.v chimaera_port_b_program.v chimaera_execution_engine.v chimaera_reaction_cell.v chimaera_config_spi.v chimaera_program_loader.v chimaera_host_interface.v chimaera_generic_execution_engine.v chimaera_contract_monitor.v chimaera_program_runtime.v project.v
 
 .PHONY: phase5
 phase5:
@@ -20,7 +20,7 @@ phase5:
 	vvp /tmp/chimaera-config-spi.vvp
 	iverilog -g2012 -s host_interface_tb -o /tmp/chimaera-host-interface.vvp $(SRC_DIR)/chimaera_config_spi.v $(SRC_DIR)/chimaera_program_loader.v $(SRC_DIR)/chimaera_host_interface.v host_interface_tb.v
 	vvp /tmp/chimaera-host-interface.vvp
-	iverilog -g2012 -s program_runtime_tb -o /tmp/chimaera-program-runtime.vvp $(SRC_DIR)/chimaera_reaction_cell.v $(SRC_DIR)/chimaera_generic_execution_engine.v $(SRC_DIR)/chimaera_program_runtime.v program_runtime_tb.v
+	iverilog -g2012 -s program_runtime_tb -o /tmp/chimaera-program-runtime.vvp $(SRC_DIR)/chimaera_reaction_cell.v $(SRC_DIR)/chimaera_generic_execution_engine.v $(SRC_DIR)/chimaera_contract_monitor.v $(SRC_DIR)/chimaera_program_runtime.v program_runtime_tb.v
 	vvp /tmp/chimaera-program-runtime.vvp
 	iverilog -g2012 -s phase5_loader_top_tb -o /tmp/chimaera-phase5-top.vvp $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES)) phase5_loader_top_tb.v
 	vvp /tmp/chimaera-phase5-top.vvp

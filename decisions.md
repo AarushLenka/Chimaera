@@ -283,3 +283,84 @@ RTL-loadable for the same equality condition as sampled-value flips. Overlapping
 delayed actions and the remaining pin-level effects still need explicit safety
 checks and demos.
 **Status:** proposed
+
+## 2026-09-28 — Extend mutation records to refusal and pin-timing faults
+
+**Context:** The remaining Phase 6 fault forms need to alter protocol output
+behavior without widening the accepted 128-bit descriptor or changing the
+descriptor CRC stream.
+**Decision:** Keep mutation records at four 32-bit slots per context. Assign
+effect kinds `3..7` to NACK, byte drop, pin hold, edge duplication, and late
+release. Use the low three bits of the record's low byte for the bound physical
+pin on pin-targeted effects; keep the existing seeded threshold behavior for
+sample/data effects. NACK and drop suppress the current predecoded action,
+hold forces a bounded low drive, duplicate reapplies the selected action one
+cycle later, and late release preserves output-enable before clearing it.
+**Alternatives considered:** Widening records would increase loader traffic and
+fault storage; adding per-effect side tables would cost more state than the
+unused low-byte encoding and complicate deterministic loading.
+**Consequences:** All five remaining mutation forms are host-, model-, and
+RTL-loadable for sampled-variable equality conditions. Pin effects remain
+bounded to one-byte durations and preserve the top-level open-drain low-only
+mask. More general address/transaction/random conditions remain future work.
+**Status:** proposed
+
+## 2026-09-28 — Add separate compact timing-contract records
+
+**Context:** Runtime timing contracts must observe synchronized pins and fail
+safe without entering the fixed-latency reaction descriptor path.
+**Decision:** Add loader opcode `0x7` with four 32-bit contract records per
+context. Implement stable-while, high-width minimum/maximum, event-within, and
+negative pin-condition records in a compact monitor with a four-entry trace
+window, sticky trigger, first violation ID/timestamp, counter, and one-cycle
+output release pulse. Keep execution running after a violation.
+**Alternatives considered:** Encoding assertions into reaction descriptors
+would consume event/action fields and make the response path contract-dependent;
+a large trace RAM would violate the deliberately small evidence-window goal.
+**Consequences:** The checked-in pulse and I2C timing contracts are now
+chip-loadable and replayable against RTL. Named `except` contract clauses are
+parsed but rejected by lowering until state-aware exception handling is
+specified. The monitor's generic synthesis cost must be evaluated by IHP
+hardening before Phase 6 can be considered physically closed.
+**Status:** proposed
+
+## 2026-09-28 — Record Phase 6 generic synthesis pressure
+
+**Context:** The full local verification gate now includes mutation controls and
+the timing-contract monitor.
+**Decision:** Record the Yosys hierarchy result of 35,235 cells including
+submodules as directional evidence only. Treat it as an area-pressure warning,
+not a physical fit claim, and require the IHP hardening flow before deciding
+whether reduction is necessary.
+**Alternatives considered:** Treating the count as final silicon area would
+violate the project's generic-versus-physical evidence boundary; ignoring it
+would hide a likely hardening risk.
+**Consequences:** Simulation, lint, and host replay are green, but Phase 6 is
+not physically closed. The next hardware checkpoint is IHP area/timing and
+routeability evidence, with focused reductions if the real result confirms the
+budget problem.
+**Status:** proposed
+
+## 2026-09-28 — Tighten timing-contract failure boundaries
+
+**Context:** The timing-contract monitor needed exact deadline behavior for
+event-within records and a stable first-failure report.
+**Decision:** Treat a target arriving after an exhausted event window as a
+violation, preserve the first violation ID and timestamp while continuing to
+count later violations, and saturate the eight-bit count. Keep the reference
+model and RTL monitor semantics identical.
+**Consequences:** Contract edge cases now have explicit host-model coverage;
+the monitor remains fail-safe for the violating cycle and keeps its trace
+frozen after the first failure.
+**Status:** proposed
+
+## 2026-09-28 — Preserve hosted IHP hardening as the physical gate
+
+**Context:** The local hardening entry point was invoked after the Phase 6
+implementation, but this environment has no `PDK_ROOT` containing the IHP
+SG13C5L PDK. Native cocotb tooling is also unavailable.
+**Decision:** Do not alter the workflow or weaken the physical evidence claim.
+Use the hosted GDS/precheck/gate-level/viewer chain after the focused change is
+reviewed and pushed, or install the matching PDK/toolchain before retrying
+`scripts/local-harden.sh` locally.
+**Status:** proposed

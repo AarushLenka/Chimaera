@@ -19,6 +19,7 @@ OP_CONTROL = 0x3
 OP_SET_PIN_MODES = 0x4
 OP_SET_FAULT_SEED = 0x5
 OP_WRITE_MUTATION = 0x6
+OP_WRITE_CONTRACT = 0x7
 OP_COMMIT = 0xE
 
 EVENT_LEVEL = 3
@@ -38,6 +39,7 @@ class PackedProgram:
     crc16: int
     fault_seed: int
     mutation_config: tuple[int, int]
+    contract_config: tuple[int, int]
     loader_frames: tuple[int, ...]
 
     @property
@@ -219,10 +221,9 @@ def _pack_mutations(
     """Pack the first hardware mutation slice into two-context fault tables.
 
     Each context has four 32-bit records, represented as two 16-bit loader
-    words. The initial slice mutates the sampled shift register when its
-    post-sample value equals the declared condition. The low byte of word one
-    is a deterministic LFSR threshold; the compiler emits 0xff for the
-    unconditional form supported by the DSL today.
+    words. The low byte is a deterministic LFSR threshold for data/action
+    effects. Pin-targeted effects use its low three bits as the physical pin
+    index; those effects are deterministic and do not consume a random gate.
     """
 
     seed = int(ir.get("fault_seed", 1))
@@ -241,10 +242,17 @@ def _pack_mutations(
             )
         effect = mutation["effect"]
         effect_kind = str(effect.get("kind"))
-        if effect_kind not in {"flip_bits", "delay"}:
-            raise PackingError(
-                "Phase 6 hardware lowering currently supports only flip bits and delay mutations"
-            )
+        effect_codes = {
+            "flip_bits": 1,
+            "delay": 2,
+            "nack": 3,
+            "drop_byte": 4,
+            "hold_low": 5,
+            "duplicate_edge": 6,
+            "late_release": 7,
+        }
+        if effect_kind not in effect_codes:
+            raise PackingError(f"unsupported mutation effect {effect_kind!r}")
         shift_variable, _ = variables[protocol_name]
         if effect_kind == "flip_bits" and (
             shift_variable is None or effect.get("variable") != shift_variable
@@ -264,20 +272,49 @@ def _pack_mutations(
             mask = int(effect.get("mask") or 0)
             if not 1 <= mask <= 0xFF:
                 raise PackingError("flip bits mutation mask must fit a non-zero byte")
-            effect_code = 1
+            effect_code = effect_codes[effect_kind]
             effect_payload = mask
-        else:
+            threshold = 0xFF
+        elif effect_kind == "delay":
             if not 1 <= amount <= 0xFF:
                 raise PackingError("delay mutation amount must fit one to 255 cycles")
-            effect_code = 2
+            effect_code = effect_codes[effect_kind]
             effect_payload = amount
+            threshold = 0xFF
+        elif effect_kind in {"nack", "drop_byte"}:
+            effect_code = effect_codes[effect_kind]
+            effect_payload = 0
+            threshold = 0
+        else:
+            pin_name = effect.get("pin")
+            pin_index = next(
+                (
+                    int(pin["index"])
+                    for pin in protocols[context]["pins"]
+                    if pin["name"] == pin_name
+                ),
+                None,
+            )
+            if pin_index is None:
+                raise PackingError(f"mutation pin {pin_name!r} has no physical binding")
+            if effect_kind == "hold_low":
+                if not 1 <= amount <= 0xFF:
+                    raise PackingError("pin hold duration must fit one to 255 cycles")
+                effect_payload = amount
+            elif effect_kind == "late_release":
+                if not 1 <= amount <= 0xFF:
+                    raise PackingError("late release duration must fit one to 255 cycles")
+                effect_payload = amount
+            else:
+                effect_payload = 0
+            effect_code = effect_codes[effect_kind]
+            threshold = pin_index
         # word 0: enable, effect kind, condition kind 1 (shift equality),
         # and the post-sample comparison value.
         word0 = 0x8000 | (effect_code << 12) | (1 << 8) | condition_value
-        # word 1: effect payload and an inclusive 8-bit LFSR threshold. 0xff
-        # makes the source-level mutation deterministic while retaining a
-        # seeded random gate for the next DSL extension.
-        word1 = (effect_payload << 8) | 0xFF
+        # word 1: effect payload and either an inclusive LFSR threshold or the
+        # physical pin index for a pin-targeted effect.
+        word1 = (effect_payload << 8) | threshold
         slots[slot] = (word0 << 16) | word1
 
     packed = tuple(
@@ -287,11 +324,66 @@ def _pack_mutations(
     return seed, (packed[0] if packed else 0, packed[1] if len(packed) > 1 else 0)
 
 
+def _pack_contracts(
+    ir: Mapping[str, Any], protocols: list[Mapping[str, Any]]
+) -> tuple[int, int]:
+    """Pack four compact temporal-contract records per protocol context.
+
+    Record format (MSB first): enable, kind, two four-bit pin fields, two
+    two-bit edge/level fields, and a sixteen-bit cycle bound.  The monitor is
+    deliberately separate from the 128-bit reaction descriptor.
+    """
+
+    protocol_index = {str(protocol["name"]): index for index, protocol in enumerate(protocols)}
+    packed = [[0 for _ in range(4)] for _ in protocols]
+    kind_codes = {"stable": 1, "high_width_min": 2, "high_width_max": 3, "event_within": 4, "not": 5}
+    edge_codes = {"rise": 1, "fall": 2}
+    for contract in ir.get("contracts", []):
+        context = protocol_index[str(contract["protocol"])]
+        records = packed[context]
+        for assertion in contract.get("records", []):
+            slot = next((index for index, value in enumerate(records) if value == 0), None)
+            if slot is None:
+                raise PackingError(
+                    f"protocol {contract['protocol']!r} exceeds the four-record contract table"
+                )
+            kind = str(assertion["kind"])
+            if kind not in kind_codes:
+                raise PackingError(f"unsupported contract record kind {kind!r}")
+            pin_a = int(assertion.get("pin", assertion.get("target_pin", 0)))
+            pin_b = int(assertion.get("guard_pin", assertion.get("source_pin", 0)))
+            if not 0 <= pin_a <= 0xF or not 0 <= pin_b <= 0xF:
+                raise PackingError("contract pin index must fit four bits")
+            edge_a = str(assertion.get("target_edge", ""))
+            edge_b = str(assertion.get("source_edge", ""))
+            edge_a_code = edge_codes.get(edge_a, int(assertion.get("guard_value", assertion.get("value", 0))) & 0x3)
+            edge_b_code = edge_codes.get(edge_b, 0)
+            duration = int(assertion.get("cycles", 0))
+            if not 0 <= duration <= 0xFFFF:
+                raise PackingError("contract cycle bound must fit sixteen bits")
+            record = (
+                (1 << 31)
+                | (kind_codes[kind] << 28)
+                | (pin_a << 24)
+                | (pin_b << 20)
+                | (edge_a_code << 18)
+                | (edge_b_code << 16)
+                | duration
+            )
+            records[slot] = record
+    packed_contexts = tuple(
+        sum(record << (slot * 32) for slot, record in enumerate(context_records))
+        for context_records in packed
+    )
+    return (
+        packed_contexts[0] if packed_contexts else 0,
+        packed_contexts[1] if len(packed_contexts) > 1 else 0,
+    )
+
+
 def pack_program(ir: Mapping[str, Any]) -> PackedProgram:
     """Lower protocol-only IR to loader frames for the fixed descriptor ABI."""
 
-    if ir.get("contracts"):
-        raise PackingError("contract records await the Phase 6 hardware format")
     protocols = list(ir["protocols"])
     if not 1 <= len(protocols) <= 2:
         raise PackingError("the v1 ABI requires one or two protocol contexts")
@@ -301,6 +393,7 @@ def pack_program(ir: Mapping[str, Any]) -> PackedProgram:
         for protocol in protocols
     }
     fault_seed, mutation_config = _pack_mutations(ir, protocols, variables)
+    contract_config = _pack_contracts(ir, protocols)
     global_ids: dict[tuple[str, int], int] = {}
     next_id = 0
     for protocol in protocols:
@@ -468,6 +561,29 @@ def pack_program(ir: Mapping[str, Any]) -> PackedProgram:
                         data=record & 0xFFFF,
                     )
                 )
+    for context, config in enumerate(contract_config):
+        for slot in range(4):
+            record = (config >> (slot * 32)) & 0xFFFFFFFF
+            if record == 0:
+                continue
+            frames.append(
+                _frame(
+                    OP_WRITE_CONTRACT,
+                    context=context,
+                    address=slot,
+                    word=0,
+                    data=(record >> 16) & 0xFFFF,
+                )
+            )
+            frames.append(
+                _frame(
+                    OP_WRITE_CONTRACT,
+                    context=context,
+                    address=slot,
+                    word=1,
+                    data=record & 0xFFFF,
+                )
+            )
     open_drain_mask = 0
     for protocol in protocols:
         for pin in protocol["pins"]:
@@ -489,5 +605,6 @@ def pack_program(ir: Mapping[str, Any]) -> PackedProgram:
         crc,
         fault_seed,
         mutation_config,
+        contract_config,
         tuple(frames),
     )

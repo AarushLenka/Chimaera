@@ -401,7 +401,11 @@ def _compile_protocol(
     )
 
 
-def _validate_mutations(program: Program, protocols: Mapping[str, Protocol]) -> list[dict[str, Any]]:
+def _validate_mutations(
+    program: Program,
+    protocols: Mapping[str, Protocol],
+    bindings: Mapping[str, str],
+) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for mutation in program.mutations:
         if mutation.protocol not in protocols:
@@ -421,6 +425,13 @@ def _validate_mutations(program: Program, protocols: Mapping[str, Protocol]) -> 
         )
         if mutation.effect.pin is not None and mutation.effect.pin not in pins:
             raise _error(mutation.effect.location, f"unknown mutation pin {mutation.effect.pin!r}")
+        if mutation.effect.kind in {"hold_low", "duplicate_edge", "late_release"}:
+            pin = next(pin for pin in protocol.pins if pin.name == mutation.effect.pin)
+            if pin.mode not in {"output", "open_drain", "bidirectional"}:
+                raise _error(
+                    mutation.effect.location,
+                    f"{mutation.effect.kind} requires an output-capable pin",
+                )
         if mutation.effect.variable is not None and mutation.effect.variable not in variables:
             raise _error(
                 mutation.effect.location,
@@ -439,29 +450,127 @@ def _validate_mutations(program: Program, protocols: Mapping[str, Protocol]) -> 
                     "pin": mutation.effect.pin,
                     "variable": mutation.effect.variable,
                     "mask": mutation.effect.mask,
+                    "pin_index": (
+                        _physical_pin(bindings[f"{protocol.name}.{mutation.effect.pin}"], mutation.effect.location)[1]
+                        if mutation.effect.pin is not None
+                        else None
+                    ),
                 },
             }
         )
     return result
 
 
-def _validate_contracts(program: Program, protocols: Mapping[str, Protocol]) -> list[dict[str, Any]]:
+def _validate_contracts(
+    program: Program,
+    protocols: Mapping[str, Protocol],
+    bindings: Mapping[str, str],
+) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
-    supported_starts = ("stable (", "high_width (", "not (")
     for contract in program.contracts:
         if contract.protocol not in protocols:
             raise _error(contract.location, f"contract targets unknown protocol {contract.protocol!r}")
+        protocol = protocols[contract.protocol]
+        pins = {pin.name: pin for pin in protocol.pins}
+        records: list[dict[str, Any]] = []
         for assertion in contract.assertions:
-            if not assertion.startswith(supported_starts) and " within " not in assertion:
+            normalized = " ".join(assertion.split())
+            stable = re.fullmatch(
+                r"stable \( (\w+) \) while (\w+) == ([01])(?: except \w+)*",
+                normalized,
+            )
+            high_width = re.fullmatch(
+                r"high_width \( (\w+) \) (>=|<=) (\d+) cycles",
+                normalized,
+            )
+            event_within = re.fullmatch(
+                r"(rise|fall) \( (\w+) \) within (\d+) cycles after (rise|fall) \( (\w+) \)",
+                normalized,
+            )
+            negative = re.fullmatch(r"not \( (\w+) == ([01]) \)", normalized)
+            if stable:
+                if " except " in normalized:
+                    raise _error(
+                        contract.location,
+                        "contract exceptions are not yet lowerable to the runtime monitor",
+                    )
+                pin_name, guard_name, guard_value = stable.groups()
+                for pin_name_to_check in (pin_name, guard_name):
+                    if pin_name_to_check not in pins:
+                        raise _error(contract.location, f"unknown contract pin {pin_name_to_check!r}")
+                records.append(
+                    {
+                        "kind": "stable",
+                        "pin": int(bindings_for_protocol_pin(protocol, pin_name, bindings)),
+                        "guard_pin": int(bindings_for_protocol_pin(protocol, guard_name, bindings)),
+                        "guard_value": int(guard_value),
+                    }
+                )
+            elif high_width:
+                pin_name, operator, cycles_text = high_width.groups()
+                if pin_name not in pins:
+                    raise _error(contract.location, f"unknown contract pin {pin_name!r}")
+                cycles = int(cycles_text)
+                if not 1 <= cycles <= 0xFFFF:
+                    raise _error(contract.location, "contract cycle bound must fit sixteen bits")
+                records.append(
+                    {
+                        "kind": "high_width_min" if operator == ">=" else "high_width_max",
+                        "pin": int(bindings_for_protocol_pin(protocol, pin_name, bindings)),
+                        "cycles": cycles,
+                    }
+                )
+            elif event_within:
+                target_edge, target_name, cycles_text, source_edge, source_name = event_within.groups()
+                for pin_name_to_check in (target_name, source_name):
+                    if pin_name_to_check not in pins:
+                        raise _error(contract.location, f"unknown contract pin {pin_name_to_check!r}")
+                cycles = int(cycles_text)
+                if not 1 <= cycles <= 0xFFFF:
+                    raise _error(contract.location, "contract cycle bound must fit sixteen bits")
+                records.append(
+                    {
+                        "kind": "event_within",
+                        "target_pin": int(bindings_for_protocol_pin(protocol, target_name, bindings)),
+                        "source_pin": int(bindings_for_protocol_pin(protocol, source_name, bindings)),
+                        "target_edge": target_edge,
+                        "source_edge": source_edge,
+                        "cycles": cycles,
+                    }
+                )
+            elif negative:
+                pin_name, value = negative.groups()
+                if pin_name not in pins:
+                    raise _error(contract.location, f"unknown contract pin {pin_name!r}")
+                records.append(
+                    {
+                        "kind": "not",
+                        "pin": int(bindings_for_protocol_pin(protocol, pin_name, bindings)),
+                        "value": int(value),
+                    }
+                )
+            else:
                 raise _error(contract.location, f"unsupported contract assertion {assertion!r}")
         result.append(
             {
                 "name": contract.name,
                 "protocol": contract.protocol,
                 "assertions": list(contract.assertions),
+                "records": records,
             }
         )
     return result
+
+
+def bindings_for_protocol_pin(
+    protocol: Protocol, pin_name: str, bindings: Mapping[str, str]
+) -> int:
+    """Return the already-resolved physical index for a protocol role."""
+
+    binding = bindings.get(f"{protocol.name}.{pin_name}")
+    if binding is None:
+        raise CompileError(f"no physical binding for contract pin {protocol.name}.{pin_name}")
+    return _physical_pin(binding, protocol.location)[1]
 
 
 def _diagram(ir: Mapping[str, Any]) -> str:
@@ -565,14 +674,16 @@ def replay():
         contexts = list(result.contexts.values())
         context_0 = contexts[0]
         context_1 = contexts[1] if len(contexts) > 1 else None
+        release_enable = 0 if result.contract_release_pulse else None
         rtl_trace.append((
             synchronized_inputs,
             rising_edges,
             falling_edges,
             context_0.drive_value,
-            context_0.drive_enable,
+            release_enable if release_enable is not None else context_0.drive_enable,
             context_1.drive_value if context_1 is not None else 0,
-            context_1.drive_enable if context_1 is not None else 0,
+            (release_enable if release_enable is not None else context_1.drive_enable)
+            if context_1 is not None else 0,
         ))
         trace.append((
             result.drive_value,
@@ -641,8 +752,8 @@ def compile_source(
     if unknown_bindings:
         raise CompileError(f"binding(s) do not name declared roles: {', '.join(unknown_bindings)}")
 
-    mutation_ir = _validate_mutations(program, protocols_by_name)
-    contract_ir = _validate_contracts(program, protocols_by_name)
+    mutation_ir = _validate_mutations(program, protocols_by_name, bindings)
+    contract_ir = _validate_contracts(program, protocols_by_name, bindings)
     state_count = sum(len(protocol["states"]) for protocol in protocol_ir)
     if state_count > 128:
         raise CompileError(f"program uses {state_count} states; descriptor memory limit is 128")
@@ -657,13 +768,12 @@ def compile_source(
         "contracts": contract_ir,
     }
     packed_program = None
-    if not contract_ir:
-        try:
-            packed_program = pack_program(ir)
-        except PackingError:
-            # Preserve a deterministic host object and diagnostics for DSL
-            # effects whose hardware record has not landed yet.
-            packed_program = None
+    try:
+        packed_program = pack_program(ir)
+    except PackingError:
+        # Preserve a deterministic host object and diagnostics for DSL
+        # effects whose hardware record has not landed yet.
+        packed_program = None
     payload = json.dumps(ir, sort_keys=True, separators=(",", ":")).encode("utf-8")
     crc = binascii.crc32(payload) & 0xFFFFFFFF
     object_bytes = _OBJECT_MAGIC + struct.pack(">I", len(payload)) + payload + struct.pack(">I", crc)
@@ -691,6 +801,7 @@ def compile_source(
             f"{packed_program.crc16:04x}" if packed_program is not None else None
         ),
         "fault_seed": f"{fault_seed:04x}",
+        "timing_contracts": sum(len(contract["records"]) for contract in contract_ir),
         "owned_pins": sorted(owner),
         "open_drain_pins": sorted(open_drain),
         "worst_case_mailbox_occupancy_bytes": 0,
@@ -704,6 +815,11 @@ def compile_source(
             "bounded_mailbox": "pass (mailbox operations not yet exposed by DSL)",
             "configuration_interface_isolated": "pass (only uio bindings are accepted)",
             "clock_durations_resolved": "pass",
+            "timing_contract_records": (
+                "pass (hardware records and runtime monitor)"
+                if contract_ir and packed_program is not None
+                else "pass (no contracts armed)"
+            ),
             "shared_execution_schedulability": (
                 "conditional pass (pending-first single-port reload; source must "
                 f"permit {len(protocol_ir)} inclusive cycle(s) between events)"
@@ -713,7 +829,6 @@ def compile_source(
         },
         "outstanding": [
             "Add DSL timing requirements and discharge the inter-event spacing assumption",
-            "Lower contracts into the reference model and hardware records",
             "Lower pattern events, seeded random_bits conditions, and bidirectional direction changes",
         ],
     }

@@ -29,7 +29,8 @@ since this document was drafted before template setup.
 | `ui_in[4]` | Host configuration MOSI | Carries 32-bit command frames. |
 | `ui_in[7:5]` | Reserved host inputs | Must not be relied on by loaded programs. |
 | `uo_out[0]` | Host MISO / received-byte bit 0 | MISO while configuration CS is active; legacy received-byte bit 0 otherwise. |
-| `uo_out[7:1]` | Last received protocol byte bits `7:1` | Legacy Phase 4 observation output. |
+| `uo_out[6:1]` | Last received protocol byte bits `6:1` | Legacy Phase 4 observation output. |
+| `uo_out[7]` | Contract-violation trigger while a loaded path is active; received-byte bit 7 in legacy fallback | Sticky timing-contract trigger is visible without moving configuration pins. |
 | `uio[0]` | Port A UART RX | Input only. |
 | `uio[1]` | Port A UART TX | Push-pull output, idle high. |
 | `uio[3:2]` | Port A reserved | Released/input. |

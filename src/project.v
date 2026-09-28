@@ -70,6 +70,15 @@ module tt_um_chimaera (
   wire [15:0]            loaded_fault_seed;
   wire [127:0]           loaded_mutation_config_0;
   wire [127:0]           loaded_mutation_config_1;
+  wire [127:0]           loaded_contract_config_0;
+  wire [127:0]           loaded_contract_config_1;
+  wire                   contract_trigger;
+  wire [7:0]             contract_violation_count;
+  wire [3:0]             contract_violation_id;
+  wire [31:0]            contract_violation_timestamp;
+  wire                   contract_release_pulse;
+  wire                   contract_trace_frozen;
+  wire [31:0]            contract_trace_latest;
   wire [31:0]            cfg_status_word;
   wire [7:0]             loaded_drive_value_0;
   wire [7:0]             loaded_drive_enable_0;
@@ -151,6 +160,10 @@ module tt_um_chimaera (
       .fault_seed             (loaded_fault_seed),
       .mutation_config_0      (loaded_mutation_config_0),
       .mutation_config_1      (loaded_mutation_config_1),
+      .contract_config_0      (loaded_contract_config_0),
+      .contract_config_1      (loaded_contract_config_1),
+      .contract_trigger      (contract_trigger),
+      .contract_violation_count(contract_violation_count),
       .status_word            (cfg_status_word)
   );
 
@@ -169,12 +182,21 @@ module tt_um_chimaera (
       .fault_seed          (loaded_fault_seed),
       .mutation_config_0   (loaded_mutation_config_0),
       .mutation_config_1   (loaded_mutation_config_1),
+      .contract_config_0   (loaded_contract_config_0),
+      .contract_config_1   (loaded_contract_config_1),
       .drive_value_0       (loaded_drive_value_0),
       .drive_enable_0      (loaded_drive_enable_0),
       .drive_value_1       (loaded_drive_value_1),
       .drive_enable_1      (loaded_drive_enable_1),
       .fire_0              (loaded_fire_0),
-      .fire_1              (loaded_fire_1)
+      .fire_1              (loaded_fire_1),
+      .contract_trigger    (contract_trigger),
+      .contract_violation_count(contract_violation_count),
+      .contract_violation_id(contract_violation_id),
+      .contract_violation_timestamp(contract_violation_timestamp),
+      .contract_release_pulse(contract_release_pulse),
+      .contract_trace_frozen(contract_trace_frozen),
+      .contract_trace_latest(contract_trace_latest)
   );
 
   chimaera_uart_program #(
@@ -244,6 +266,12 @@ module tt_um_chimaera (
       .load_oe_mask      (program_oe_mask_0),
       .load_oe_value     (program_oe_value_0),
       .fault_delay       (8'h00),
+      .fault_suppress    (1'b0),
+      .fault_hold_mask   (8'h00),
+      .fault_hold_cycles (8'h00),
+      .fault_duplicate_mask(8'h00),
+      .fault_late_release_mask(8'h00),
+      .fault_late_release_cycles(8'h00),
       .fire              (cell_fire_0),
       .fire_from_timeout (cell_fire_from_timeout_0),
       .fire_sample       (cell_fire_sample_0),
@@ -277,6 +305,12 @@ module tt_um_chimaera (
       .load_oe_mask      (program_oe_mask_1),
       .load_oe_value     (program_oe_value_1),
       .fault_delay       (8'h00),
+      .fault_suppress    (1'b0),
+      .fault_hold_mask   (8'h00),
+      .fault_hold_cycles (8'h00),
+      .fault_duplicate_mask(8'h00),
+      .fault_late_release_mask(8'h00),
+      .fault_late_release_cycles(8'h00),
       .fire              (cell_fire_1),
       .fire_from_timeout (cell_fire_from_timeout_1),
       .fire_sample       (cell_fire_sample_1),
@@ -332,7 +366,8 @@ module tt_um_chimaera (
   wire [7:0] loaded_value_low_only = loaded_value & ~loaded_open_drain_mask;
 
   assign uo_out[0] = cfg_active ? cfg_miso : received_byte[0];
-  assign uo_out[7:1] = received_byte[7:1];
+  assign uo_out[7] = use_loaded_path ? contract_trigger : received_byte[7];
+  assign uo_out[6:1] = received_byte[6:1];
   assign uio_out = use_loaded_path ? loaded_value_low_only : legacy_uio_out;
   assign uio_oe = use_loaded_path ? loaded_enable : legacy_uio_oe;
 
@@ -340,7 +375,10 @@ module tt_um_chimaera (
                    cell_fire_from_timeout_1, received_strobe,
                    loaded_load_error, loaded_descriptor_count, loaded_crc,
                    loaded_fault_seed, loaded_mutation_config_0,
-                   loaded_mutation_config_1,
+                   loaded_mutation_config_1, loaded_contract_config_0,
+                   loaded_contract_config_1, contract_violation_id,
+                   contract_violation_timestamp, contract_trace_frozen,
+                   contract_release_pulse, contract_trace_latest,
                    cfg_status_word, loaded_fire_0, loaded_fire_1, 1'b0};
 
 endmodule

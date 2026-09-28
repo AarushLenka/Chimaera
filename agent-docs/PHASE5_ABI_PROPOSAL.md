@@ -42,7 +42,8 @@ The loader computes CRC-16-CCITT over those payload bytes from initial value
 The 32-bit command frame uses opcode `31:28`, context `27`, descriptor address
 `26:22`, word index `21:19`, reserved-zero bits `18:16`, and payload `15:0`.
 `BEGIN`, `WRITE_DESCRIPTOR`, `SET_CONTEXT`, `SET_PIN_MODES`, `SET_FAULT_SEED`,
-`WRITE_MUTATION`, `COMMIT`, and `CONTROL` form the accepted command set.
+`WRITE_MUTATION`, `WRITE_CONTRACT`, `COMMIT`, and `CONTROL` form the accepted
+command set.
 
 ## Phase 6 fault-record extension
 
@@ -54,34 +55,60 @@ fields to the fixed-latency descriptor or change its CRC format.
 |---:|---|---|---|
 | `0x5` | `SET_FAULT_SEED` | payload | Load a non-zero 16-bit shared LFSR seed while a load is active. Context, address, and word must be zero. |
 | `0x6` | `WRITE_MUTATION` | context, address `0..3`, word `0..1`, payload | Write one 16-bit half of a 32-bit mutation record. |
+| `0x7` | `WRITE_CONTRACT` | context, address `0..3`, word `0..1`, payload | Write one 16-bit half of a 32-bit timing-contract record. |
 
-`BEGIN` resets the seed to `0x0001` and clears both four-record tables. A
+`BEGIN` resets the seed to `0x0001` and clears both four-record mutation and
+contract tables. A
 mutation record is laid out as follows:
 
 | Record bits | Meaning |
 |---:|---|
 | `31` | enable |
-| `30:28` | effect kind; `1` is `flip_sample`, `2` is `delay_action` |
+| `30:28` | effect kind; `1` flip, `2` delay, `3` NACK, `4` drop, `5` hold, `6` duplicate, `7` late release |
 | `27:24` | condition kind; `1` is sampled-shift equality |
 | `23:16` | post-sample shift value to compare |
 | `15:8` | effect payload: XOR mask for `flip_sample`, delay cycles for `delay_action` |
-| `7:0` | inclusive LFSR threshold |
+| `7:0` | inclusive LFSR threshold, or low-three-bit physical pin index for pin effects |
 
-The first lowerable mutation forms are `flip bits <mask> in
-<sampled_variable>` and `delay next action by <N> cycles`, each with a condition
-comparing the sampled variable to an eight-bit literal. Flip masks and delays
-fit one byte in this record slice. The sampled value is updated, faulted, and
-then used for the successor condition on the same fire; a delayed action keeps
-the normal successor/reload path but commits its predecoded pin action after the
-requested number of clocks. The shared 16-bit LFSR uses
+The lowerable mutation forms are `flip bits <mask> in <sampled_variable>`,
+`delay next action by <N> cycles`, `nack`, `drop byte`, `hold <pin> low for <N>
+cycles`, `duplicate edge on <pin>`, and `release <pin> after <N> extra cycles`,
+each with a condition comparing the sampled variable to an eight-bit literal.
+Flip masks and durations fit one byte in this record slice. NACK/drop suppress
+the current predecoded action; hold forces the selected pin low and enabled for
+the bounded interval; duplicate reapplies the selected action one cycle later;
+and late release preserves a selected output enable before clearing it after the
+extra interval. The sampled value is updated, faulted, and then used for the
+successor condition on the same fire; a delayed action keeps the normal
+successor/reload path but commits its predecoded pin action after the requested
+number of clocks. The shared 16-bit LFSR uses
 `x^16 + x^14 + x^13 + x^11 + 1`, advances once per fired context edge, and
 passes a record when `(lfsr[7:0] ^ lfsr[15:8]) <= threshold`. The compiler emits
-`0xff` for the deterministic source form; the threshold field leaves room for
-seeded probabilistic mutations without changing the loader ABI.
+`0xff` for deterministic data/action forms; pin effects use the low three bits
+for their bound physical pin and are deterministic. The remaining threshold
+bits remain available for seeded probabilistic mutations.
 
 Mutation records are separate from the descriptor CRC. Incomplete or malformed
 records remain disabled unless their enable/effect/condition fields form a
 valid record; descriptor ordering and CRC checks are unchanged.
+
+## Phase 6 timing-contract records
+
+Timing contracts use loader opcode `0x7`, with two 16-bit words per record and
+four records per context. The 32-bit record is:
+
+| Bits | Meaning |
+|---:|---|
+| `31` | enable |
+| `30:28` | kind: stable-while, high-width minimum/maximum, event-within, or negative condition |
+| `27:24`, `23:20` | primary and secondary physical pin indices |
+| `19:18`, `17:16` | edge or level fields, depending on kind |
+| `15:0` | cycle bound |
+
+The runtime monitor records the first violating record ID and timestamp,
+increments a violation counter, raises a sticky trigger, freezes a four-entry
+event window, and pulses a fail-safe output release for the violating cycle.
+Protocol execution continues after the release pulse.
 
 ## Measured generic synthesis cost
 
@@ -108,6 +135,13 @@ Local Yosys 0.63 reports **12,344 generic cells**, including 9,214 in the loader
 and its 4,096 descriptor flip-flops. This remains directional: only IHP
 place-and-route can establish physical fit and 50 MHz timing.
 
+The Phase 6 top-level local verification run reports **35,235 hierarchy cells
+including submodules** after adding the mutation controls and contract monitor.
+This is a generic directional result, not an IHP fit/timing result, and it is
+above the rough 24,000-cell budget; the next gate is measurement through the
+actual IHP hardening flow, followed by an area-reduction decision if physical
+results confirm the pressure.
+
 ## Why fixed 32 is recommended
 
 - One indexed read arms the next descriptor without a variable-length decode,
@@ -128,9 +162,8 @@ place-and-route can establish physical fit and 50 MHz timing.
 
 1. The compiler rejects programs above 32 descriptors after helper-state lowering.
 2. Protocol-only programs emit a `.loader.bin` stream and are marked
-   `chip_loadable: true`; the first Phase 6 `flip bits` mutation slice also emits
-   seed and mutation frames, while contracts and other mutation effects remain
-   host-only.
+   `chip_loadable: true`; Phase 6 mutation and timing-contract records emit
+   separate seed, mutation, and contract frames.
 3. The loader and runtime reject ordering, CRC, partial-record, entry-point, and
    successor-target errors before execution can resume.
 4. Two-context manifests expose the two-cycle rearm/inter-event-spacing assumption;

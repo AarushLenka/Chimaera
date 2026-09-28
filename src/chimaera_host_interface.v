@@ -27,6 +27,10 @@ module chimaera_host_interface (
     output wire [15:0]  fault_seed,
     output wire [127:0] mutation_config_0,
     output wire [127:0] mutation_config_1,
+    output wire [127:0] contract_config_0,
+    output wire [127:0] contract_config_1,
+    input  wire         contract_trigger,
+    input  wire [7:0]   contract_violation_count,
     output wire [31:0]  status_word
 );
 
@@ -42,7 +46,8 @@ module chimaera_host_interface (
       loaded_descriptor_count,
       computed_crc,
       context_enable,
-      4'b0000
+      (contract_trigger | (|contract_violation_count[7:3])),
+      contract_violation_count[2:0]
   };
 
   chimaera_config_spi config_spi (
@@ -76,9 +81,11 @@ module chimaera_host_interface (
         .load_in_progress       (load_in_progress),
         .loaded_descriptor_count(loaded_descriptor_count),
         .computed_crc           (computed_crc),
-        .fault_seed             (fault_seed),
-        .mutation_config_0      (mutation_config_0),
-        .mutation_config_1      (mutation_config_1)
+      .fault_seed             (fault_seed),
+      .mutation_config_0      (mutation_config_0),
+      .mutation_config_1      (mutation_config_1),
+      .contract_config_0      (contract_config_0),
+      .contract_config_1      (contract_config_1)
   );
 
 endmodule

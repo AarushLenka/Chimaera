@@ -46,6 +46,8 @@ module host_interface_tb;
       .load_in_progress(load_in_progress),
       .loaded_descriptor_count(loaded_descriptor_count),
       .computed_crc(computed_crc),
+      .contract_trigger(1'b0),
+      .contract_violation_count(8'h00),
       .status_word(status_word)
   );
 

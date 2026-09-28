@@ -28,6 +28,12 @@ class ChipStepResult:
     contexts: Mapping[str, StepResult]
     drive_value: int
     drive_enable: int
+    contract_trigger: bool = False
+    contract_violation_count: int = 0
+    contract_violation_id: int = 0
+    contract_release_pulse: bool = False
+    contract_violation_timestamp: int = 0
+    contract_trace_frozen: bool = False
 
 
 def _eval_expr(expression: Mapping[str, Any], values: Mapping[str, int]) -> int:
@@ -104,6 +110,11 @@ class ReferenceModel:
         self.drive_enable = 0
         self.pending_action: tuple[int, int, int, int] | None = None
         self.pending_delay = 0
+        self.pending_duplicate: tuple[int, int, int, int] | None = None
+        self.pending_release_mask = 0
+        self.pending_release_delay = 0
+        self.hold_mask = 0
+        self.hold_remaining = 0
         self.variables: dict[str, int] = {"transaction_count": 0}
 
     @property
@@ -148,14 +159,34 @@ class ReferenceModel:
         self.drive_enable &= 0xFF
 
     def _tick_delayed_output(self) -> None:
-        if self.pending_action is None:
-            return
-        if self.pending_delay <= 1:
-            self._commit_action(self.pending_action)
-            self.pending_action = None
-            self.pending_delay = 0
-        else:
-            self.pending_delay -= 1
+        if self.pending_action is not None:
+            if self.pending_delay <= 1:
+                self._commit_action(self.pending_action)
+                self.pending_action = None
+                self.pending_delay = 0
+            else:
+                self.pending_delay -= 1
+
+        if self.pending_duplicate is not None:
+            self._commit_action(self.pending_duplicate)
+            self.pending_duplicate = None
+
+        if self.pending_release_mask:
+            if self.pending_release_delay <= 1:
+                self.drive_enable &= ~self.pending_release_mask
+                self.pending_release_mask = 0
+                self.pending_release_delay = 0
+            else:
+                self.pending_release_delay -= 1
+
+        if self.hold_mask:
+            self.drive_value &= ~self.hold_mask
+            self.drive_enable |= self.hold_mask
+            if self.hold_remaining <= 1:
+                self.hold_mask = 0
+                self.hold_remaining = 0
+            else:
+                self.hold_remaining -= 1
 
     def step(self, synchronized_inputs: int, *, advance_fault: bool = True) -> StepResult:
         """Advance one clock using the already-synchronized 8-bit input sample."""
@@ -195,9 +226,23 @@ class ReferenceModel:
             # original fixed one-cycle reaction point.
             mutation_values = self._condition_values(synchronized_inputs)
             delay_cycles = 0
+            suppress_action = False
+            hold_mask = 0
+            hold_cycles = 0
+            duplicate_mask = 0
+            late_release_mask = 0
+            late_release_cycles = 0
             for mutation in self.mutations:
                 effect = mutation["effect"]
-                if effect["kind"] not in {"flip_bits", "delay"}:
+                if effect["kind"] not in {
+                    "flip_bits",
+                    "delay",
+                    "nack",
+                    "drop_byte",
+                    "hold_low",
+                    "duplicate_edge",
+                    "late_release",
+                }:
                     raise CompileError(
                         f"reference model cannot execute mutation effect {effect['kind']!r}"
                     )
@@ -211,13 +256,51 @@ class ReferenceModel:
                         self.variables[variable] = (
                             self.variables[variable] ^ int(effect["mask"] or 0)
                         ) & 0xFFFF
-                    else:
+                    elif effect["kind"] == "delay":
                         delay_cycles = max(delay_cycles, int(effect["amount"] or 0))
-            if delay_cycles:
-                self.pending_action = output_action
-                self.pending_delay = delay_cycles
-            else:
-                self._commit_action(output_action)
+                    elif effect["kind"] in {"nack", "drop_byte"}:
+                        suppress_action = True
+                    elif effect["kind"] == "hold_low":
+                        pin_index = int(effect["pin_index"])
+                        hold_mask |= 1 << pin_index
+                        hold_cycles = max(hold_cycles, int(effect["amount"] or 0))
+                    elif effect["kind"] == "duplicate_edge":
+                        duplicate_mask |= 1 << int(effect["pin_index"])
+                    elif effect["kind"] == "late_release":
+                        late_release_mask |= 1 << int(effect["pin_index"])
+                        late_release_cycles = max(
+                            late_release_cycles, int(effect["amount"] or 0)
+                        )
+
+            effective_late_mask = late_release_mask & output_action[2] & ~output_action[3]
+            effective_action = (
+                output_action[0],
+                output_action[1],
+                output_action[2],
+                (output_action[3] & ~effective_late_mask)
+                | (self.drive_enable & effective_late_mask),
+            )
+            if not suppress_action:
+                if delay_cycles:
+                    self.pending_action = effective_action
+                    self.pending_delay = delay_cycles
+                else:
+                    self._commit_action(effective_action)
+                if duplicate_mask:
+                    self.pending_duplicate = (
+                        output_action[0] & duplicate_mask,
+                        output_action[1],
+                        output_action[2] & duplicate_mask,
+                        effective_action[3],
+                    )
+                if effective_late_mask and late_release_cycles:
+                    self.pending_release_mask = effective_late_mask
+                    self.pending_release_delay = delay_cycles + late_release_cycles
+            if hold_mask and hold_cycles:
+                self.hold_mask = hold_mask
+                self.hold_remaining = hold_cycles
+                self.drive_value &= ~hold_mask
+                self.drive_enable |= hold_mask
             if advance_fault:
                 self.fault_lfsr = _advance_lfsr(self.fault_lfsr)
 
@@ -269,6 +352,111 @@ class ReferenceModel:
         )
 
 
+class ContractReferenceMonitor:
+    """Cycle model for the compact hardware timing-contract records."""
+
+    def __init__(self, compilation: _HasIR):
+        self.records: list[dict[str, Any]] = []
+        for contract in compilation.ir.get("contracts", []):
+            self.records.extend(contract.get("records", []))
+        self.high_active = [False] * 8
+        self.high_count = [0] * 8
+        self.event_armed = [False] * len(self.records)
+        self.event_timer = [0] * len(self.records)
+        self.event_reported = [False] * len(self.records)
+        self.reported = [False] * len(self.records)
+        self.trigger = False
+        self.trace_frozen = False
+        self.violation_count = 0
+        self.violation_id = 0
+        self.timestamp = 0
+        self.violation_timestamp = 0
+
+    @staticmethod
+    def _edge_seen(edge: str, pin: int, rising: int, falling: int) -> bool:
+        if not 0 <= pin < 8:
+            return False
+        return bool((rising if edge == "rise" else falling) & (1 << pin))
+
+    def step(self, inputs: int, rising: int, falling: int) -> bool:
+        violation: tuple[int, int] | None = None
+        for index, record in enumerate(self.records):
+            kind = record["kind"]
+            if kind == "stable":
+                if (
+                    ((inputs >> record["guard_pin"]) & 1) == record["guard_value"]
+                    and ((rising | falling) & (1 << record["pin"]))
+                ):
+                    violation = (index, 1)
+            elif kind == "high_width_min":
+                if (
+                    (falling & (1 << record["pin"]))
+                    and self.high_active[record["pin"]]
+                    and self.high_count[record["pin"]] < record["cycles"]
+                ):
+                    violation = (index, 2)
+            elif kind == "high_width_max":
+                if (
+                    self.high_active[record["pin"]]
+                    and self.high_count[record["pin"]] >= record["cycles"]
+                    and not self.reported[index]
+                ):
+                    violation = (index, 3)
+            elif kind == "event_within":
+                if self.event_armed[index] and self.event_timer[index] == 0 and not self.event_reported[index]:
+                    violation = (index, 4)
+            elif kind == "not":
+                if (
+                    ((inputs >> record["pin"]) & 1) == record["value"]
+                    and not self.reported[index]
+                ):
+                    violation = (index, 5)
+
+        for pin in range(8):
+            if rising & (1 << pin):
+                self.high_active[pin] = True
+                self.high_count[pin] = 1
+            elif falling & (1 << pin):
+                self.high_active[pin] = False
+                self.high_count[pin] = 0
+            elif self.high_active[pin]:
+                self.high_count[pin] = min(0xFFFF, self.high_count[pin] + 1)
+
+        for index, record in enumerate(self.records):
+            if record["kind"] == "event_within":
+                if self._edge_seen(record["source_edge"], record["source_pin"], rising, falling):
+                    self.event_armed[index] = True
+                    self.event_timer[index] = record["cycles"]
+                    self.event_reported[index] = False
+                elif self.event_timer[index] and self._edge_seen(
+                    record["target_edge"], record["target_pin"], rising, falling
+                ):
+                    self.event_armed[index] = False
+                    self.event_timer[index] = 0
+                elif self.event_armed[index] and self.event_timer[index]:
+                    self.event_timer[index] -= 1
+            if record["kind"] == "high_width_max" and not self.high_active[record["pin"]]:
+                self.reported[index] = False
+            if record["kind"] == "not" and ((inputs >> record["pin"]) & 1) != record["value"]:
+                self.reported[index] = False
+
+        self.timestamp += 1
+        release = violation is not None
+        if violation is not None:
+            index, kind = violation
+            first_violation = not self.trigger
+            self.trigger = True
+            self.trace_frozen = True
+            self.violation_count = min(0xFF, self.violation_count + 1)
+            if first_violation:
+                self.violation_id = index
+                self.violation_timestamp = self.timestamp
+            if kind == 3 or kind == 5:
+                self.reported[index] = True
+            elif kind == 4:
+                self.event_reported[index] = True
+        return release
+
 class ChipReferenceModel:
     """Run all compiled contexts against the same synchronized input sample."""
 
@@ -284,6 +472,7 @@ class ChipReferenceModel:
                     self.open_drain_mask |= 1 << int(pin["index"])
         self.pending_context: str | None = None
         self.fault_lfsr = int(compilation.ir.get("fault_seed", 1))
+        self.contract_monitor = ContractReferenceMonitor(compilation)
 
     def step(self, synchronized_inputs: int) -> ChipStepResult:
         rearming = self.pending_context
@@ -318,7 +507,25 @@ class ChipReferenceModel:
             drive_enable |= result.drive_enable
         if drive_value & drive_enable & self.open_drain_mask:
             raise CompileError("reference model attempted an active-high open-drain drive")
-        return ChipStepResult(context_results, drive_value & 0xFF, drive_enable & 0xFF)
+        rising_edges = (~getattr(self, "previous_inputs", 0) & synchronized_inputs) & 0xFF
+        falling_edges = (getattr(self, "previous_inputs", 0) & ~synchronized_inputs) & 0xFF
+        contract_release = self.contract_monitor.step(
+            synchronized_inputs, rising_edges, falling_edges
+        )
+        self.previous_inputs = synchronized_inputs
+        if contract_release:
+            drive_enable = 0
+        return ChipStepResult(
+            context_results,
+            drive_value & 0xFF,
+            drive_enable & 0xFF,
+            self.contract_monitor.trigger,
+            self.contract_monitor.violation_count,
+            self.contract_monitor.violation_id,
+            contract_release,
+            self.contract_monitor.violation_timestamp,
+            self.contract_monitor.trace_frozen,
+        )
 
     def _step_context(self, context: ReferenceModel, synchronized_inputs: int) -> StepResult:
         context.fault_lfsr = self.fault_lfsr
