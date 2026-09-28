@@ -102,6 +102,8 @@ class ReferenceModel:
         self.previous_inputs = 0
         self.drive_value = 0
         self.drive_enable = 0
+        self.pending_action: tuple[int, int, int, int] | None = None
+        self.pending_delay = 0
         self.variables: dict[str, int] = {"transaction_count": 0}
 
     @property
@@ -138,11 +140,29 @@ class ReferenceModel:
             matched = (inputs & level_mask) == (int(state["level_value"]) & level_mask)
         return matched
 
+    def _commit_action(self, action: tuple[int, int, int, int]) -> None:
+        action_mask, action_value, oe_mask, oe_value = action
+        self.drive_value = (self.drive_value & ~action_mask) | (action_value & action_mask)
+        self.drive_enable = (self.drive_enable & ~oe_mask) | (oe_value & oe_mask)
+        self.drive_value &= 0xFF
+        self.drive_enable &= 0xFF
+
+    def _tick_delayed_output(self) -> None:
+        if self.pending_action is None:
+            return
+        if self.pending_delay <= 1:
+            self._commit_action(self.pending_action)
+            self.pending_action = None
+            self.pending_delay = 0
+        else:
+            self.pending_delay -= 1
+
     def step(self, synchronized_inputs: int, *, advance_fault: bool = True) -> StepResult:
         """Advance one clock using the already-synchronized 8-bit input sample."""
 
         if not 0 <= synchronized_inputs <= 0xFF:
             raise ValueError("synchronized_inputs must fit in 8 bits")
+        self._tick_delayed_output()
         state = self.states[self.state_id]
         before = str(state["name"])
         event_match = self._event_matches(state, synchronized_inputs)
@@ -152,43 +172,52 @@ class ReferenceModel:
         if fired:
             action_mask = int(state["action_mask"])
             oe_mask = int(state["oe_mask"])
-            self.drive_value = (
-                (self.drive_value & ~action_mask) | (int(state["action_value"]) & action_mask)
-            ) & 0xFF
-            self.drive_enable = (
-                (self.drive_enable & ~oe_mask) | (int(state["oe_value"]) & oe_mask)
-            ) & 0xFF
-            for action in state["actions"]:
-                if action["kind"] == "sample":
-                    bit = (synchronized_inputs >> self.pin_indexes[action["pin"]]) & 1
-                    old = self.variables.get(action["variable"], 0)
-                    self.variables[action["variable"]] = ((old << 1) | bit) & 0xFFFF
-                elif action["kind"] == "count":
-                    name = action["variable"]
+            output_action = (
+                action_mask,
+                int(state["action_value"]),
+                oe_mask,
+                int(state["oe_value"]),
+            )
+            for state_action in state["actions"]:
+                if state_action["kind"] == "sample":
+                    bit = (synchronized_inputs >> self.pin_indexes[state_action["pin"]]) & 1
+                    old = self.variables.get(state_action["variable"], 0)
+                    self.variables[state_action["variable"]] = ((old << 1) | bit) & 0xFFFF
+                elif state_action["kind"] == "count":
+                    name = state_action["variable"]
                     self.variables[name] = (self.variables.get(name, 0) + 1) & 0xFFFF
-                elif action["kind"] == "reset":
-                    self.variables[action["variable"]] = 0
+                elif state_action["kind"] == "reset":
+                    self.variables[state_action["variable"]] = 0
 
             # The first hardware fault slice mutates the sampled shift
             # register after the normal action update. This ordering makes a
             # captured byte reproducible while keeping output actions at the
             # original fixed one-cycle reaction point.
             mutation_values = self._condition_values(synchronized_inputs)
+            delay_cycles = 0
             for mutation in self.mutations:
                 effect = mutation["effect"]
-                if effect["kind"] != "flip_bits":
+                if effect["kind"] not in {"flip_bits", "delay"}:
                     raise CompileError(
                         f"reference model cannot execute mutation effect {effect['kind']!r}"
                     )
                 if _eval_expr(mutation["condition"], mutation_values):
-                    variable = effect["variable"]
-                    if variable not in self.variables:
-                        raise CompileError(
-                            f"reference model has no mutation variable {variable!r}"
-                        )
-                    self.variables[variable] = (
-                        self.variables[variable] ^ int(effect["mask"] or 0)
-                    ) & 0xFFFF
+                    if effect["kind"] == "flip_bits":
+                        variable = effect["variable"]
+                        if variable not in self.variables:
+                            raise CompileError(
+                                f"reference model has no mutation variable {variable!r}"
+                            )
+                        self.variables[variable] = (
+                            self.variables[variable] ^ int(effect["mask"] or 0)
+                        ) & 0xFFFF
+                    else:
+                        delay_cycles = max(delay_cycles, int(effect["amount"] or 0))
+            if delay_cycles:
+                self.pending_action = output_action
+                self.pending_delay = delay_cycles
+            else:
+                self._commit_action(output_action)
             if advance_fault:
                 self.fault_lfsr = _advance_lfsr(self.fault_lfsr)
 
@@ -226,6 +255,7 @@ class ReferenceModel:
 
         if not 0 <= synchronized_inputs <= 0xFF:
             raise ValueError("synchronized_inputs must fit in 8 bits")
+        self._tick_delayed_output()
         state_name = self.state_name
         self.previous_inputs = synchronized_inputs
         return StepResult(

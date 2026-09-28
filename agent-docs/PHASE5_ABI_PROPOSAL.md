@@ -61,16 +61,19 @@ mutation record is laid out as follows:
 | Record bits | Meaning |
 |---:|---|
 | `31` | enable |
-| `30:28` | effect kind; `1` is `flip_sample` |
+| `30:28` | effect kind; `1` is `flip_sample`, `2` is `delay_action` |
 | `27:24` | condition kind; `1` is sampled-shift equality |
 | `23:16` | post-sample shift value to compare |
-| `15:8` | XOR mask applied to the sampled shift register |
+| `15:8` | effect payload: XOR mask for `flip_sample`, delay cycles for `delay_action` |
 | `7:0` | inclusive LFSR threshold |
 
-The first lowerable mutation form is `flip bits <mask> in <sampled_variable>`
-with a condition comparing that same sampled variable to an eight-bit literal.
-The sampled value is updated, faulted, and then used for the successor
-condition on the same fire. The shared 16-bit LFSR uses
+The first lowerable mutation forms are `flip bits <mask> in
+<sampled_variable>` and `delay next action by <N> cycles`, each with a condition
+comparing the sampled variable to an eight-bit literal. Flip masks and delays
+fit one byte in this record slice. The sampled value is updated, faulted, and
+then used for the successor condition on the same fire; a delayed action keeps
+the normal successor/reload path but commits its predecoded pin action after the
+requested number of clocks. The shared 16-bit LFSR uses
 `x^16 + x^14 + x^13 + x^11 + 1`, advances once per fired context edge, and
 passes a record when `(lfsr[7:0] ^ lfsr[15:8]) <= threshold`. The compiler emits
 `0xff` for the deterministic source form; the threshold field leaves room for

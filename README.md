@@ -99,9 +99,10 @@ accepts this stream on `ui_in[2]` (active-low CS), `ui_in[3]` (SCLK below
 The first Phase 6 fault slice preserves the descriptor format and adds separate
 seed/mutation frames. Compile a source containing a supported sampled-variable
 mutation with `--fault-seed 0xACE1`; the emitted loader stream includes the
-non-zero LFSR seed and the four-slot-per-context mutation table. Other mutation
-effects and timing contracts remain host-model features until their hardware
-records are implemented.
+non-zero LFSR seed and the four-slot-per-context mutation table. Sampled-value
+bit flips and bounded action delays are implemented; NACK/drop, pin holds,
+duplicate/late edges, and timing contracts remain host-model features until
+their hardware records are implemented.
 
 Run the host-toolchain checks without third-party Python packages:
 

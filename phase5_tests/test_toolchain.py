@@ -87,6 +87,23 @@ mutation flip_sample for sampled_fault {
     flip bits 0x01 in sample
 }
 """
+DELAY_SOURCE = """
+protocol delayed_response {
+    pin data input
+    pin response output
+    state idle {
+        on rise(data) {
+            sample data into sample
+            drive response high
+            goto idle
+        }
+    }
+}
+mutation delay_response for delayed_response {
+    when sample == 0x01
+    delay next action by 2 cycles
+}
+"""
 
 
 class ParserTests(unittest.TestCase):
@@ -318,6 +335,23 @@ protocol timed {
             exec(compilation.randomized_test, {"__name__": "__generated_test__"})
         self.assertIn("PASS: 256 randomized cycles", output.getvalue())
 
+    def test_lowers_delay_mutation_into_the_same_record_table(self) -> None:
+        compilation = compile_source(
+            DELAY_SOURCE,
+            clock_hz=50_000_000,
+            fault_seed=0xACE1,
+            bindings={
+                "delayed_response.data": "uio[0]",
+                "delayed_response.response": "uio[1]",
+            },
+        )
+        packed = compilation.packed_program
+        self.assertIsNotNone(packed)
+        assert packed is not None
+        record = packed.mutation_config[0] & 0xFFFFFFFF
+        self.assertEqual((record >> 16) & 0xFFFF, 0xA101)
+        self.assertEqual(record & 0xFFFF, 0x02FF)
+
     def test_rejects_open_drain_high_drive(self) -> None:
         source = """
 protocol unsafe {
@@ -469,6 +503,38 @@ class ReferenceModelTests(unittest.TestCase):
             )
             previous = inputs
         output = run_runtime_replay(packed, trace)
+        self.assertIn("PASS: generated runtime replay", output)
+
+    def test_delay_mutation_changes_output_cycle(self) -> None:
+        compilation = compile_source(
+            DELAY_SOURCE,
+            clock_hz=50_000_000,
+            fault_seed=0xACE1,
+            bindings={
+                "delayed_response.data": "uio[0]",
+                "delayed_response.response": "uio[1]",
+            },
+        )
+        model = ReferenceModel(compilation, "delayed_response")
+        self.assertEqual(model.step(0x00).drive_value, 0x00)
+        fired = model.step(0x01)
+        self.assertTrue(fired.fired)
+        self.assertEqual(fired.drive_value, 0x00)
+        self.assertEqual(model.step(0x00).drive_value, 0x00)
+        delayed = model.step(0x00)
+        self.assertEqual(delayed.drive_value, 0x02)
+
+        chip_model = ChipReferenceModel(compilation)
+        trace = []
+        previous = 0
+        for inputs in (0x00, 0x01, 0x00, 0x00):
+            rising = (~previous & inputs) & 0xFF
+            falling = (previous & ~inputs) & 0xFF
+            result = chip_model.step(inputs)
+            context = next(iter(result.contexts.values()))
+            trace.append((inputs, rising, falling, context.drive_value, context.drive_enable, 0, 0))
+            previous = inputs
+        output = run_runtime_replay(compilation.packed_program, trace)
         self.assertIn("PASS: generated runtime replay", output)
 
     def test_two_context_chip_model_merges_disjoint_outputs(self) -> None:

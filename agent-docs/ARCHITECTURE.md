@@ -163,10 +163,11 @@ constraint, not a corner case to handle later.
 The first Phase 6 implementation keeps this stage separate from the descriptor
 ABI. Each context has four 32-bit mutation records loaded through dedicated
 configuration opcodes, and a shared seeded 16-bit LFSR. The implemented slice
-faults a sampled shift-register value before successor-condition evaluation;
-open-drain output drive remains behind the existing low-only mask. Delay,
-protocol refusal/drop, pin hold, edge duplication, and late release still need
-their own records and focused live demos.
+faults a sampled shift-register value before successor-condition evaluation or
+delays a predecoded pin action by a bounded byte-sized number of clocks.
+Open-drain output drive remains behind the existing low-only mask. Protocol
+refusal/drop, pin hold, edge duplication, and late release still need their own
+records and focused live demos.
 
 ## 8. Contract/assertion checker
 

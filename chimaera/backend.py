@@ -240,12 +240,15 @@ def _pack_mutations(
                 f"protocol {protocol_name!r} exceeds the four-record mutation table"
             )
         effect = mutation["effect"]
-        if effect.get("kind") != "flip_bits":
+        effect_kind = str(effect.get("kind"))
+        if effect_kind not in {"flip_bits", "delay"}:
             raise PackingError(
-                "Phase 6 hardware lowering currently supports only flip bits mutations"
+                "Phase 6 hardware lowering currently supports only flip bits and delay mutations"
             )
         shift_variable, _ = variables[protocol_name]
-        if shift_variable is None or effect.get("variable") != shift_variable:
+        if effect_kind == "flip_bits" and (
+            shift_variable is None or effect.get("variable") != shift_variable
+        ):
             raise PackingError(
                 "flip bits mutations must target the protocol's sampled shift variable"
             )
@@ -256,16 +259,25 @@ def _pack_mutations(
             )
         if not 0 <= condition_value <= 0xFF:
             raise PackingError("mutation condition value must fit eight bits")
-        mask = int(effect.get("mask") or 0)
-        if not 1 <= mask <= 0xFF:
-            raise PackingError("flip bits mutation mask must fit a non-zero byte")
-        # word 0: enable, effect kind 1 (flip sample), condition kind 1
-        # (shift equality), and the post-sample comparison value.
-        word0 = 0x8000 | (1 << 12) | (1 << 8) | condition_value
-        # word 1: XOR mask and an inclusive 8-bit LFSR threshold. 0xff makes
-        # the source-level mutation deterministic while retaining a seeded
-        # random gate for the next DSL extension.
-        word1 = (mask << 8) | 0xFF
+        amount = int(effect.get("amount") or 0)
+        if effect_kind == "flip_bits":
+            mask = int(effect.get("mask") or 0)
+            if not 1 <= mask <= 0xFF:
+                raise PackingError("flip bits mutation mask must fit a non-zero byte")
+            effect_code = 1
+            effect_payload = mask
+        else:
+            if not 1 <= amount <= 0xFF:
+                raise PackingError("delay mutation amount must fit one to 255 cycles")
+            effect_code = 2
+            effect_payload = amount
+        # word 0: enable, effect kind, condition kind 1 (shift equality),
+        # and the post-sample comparison value.
+        word0 = 0x8000 | (effect_code << 12) | (1 << 8) | condition_value
+        # word 1: effect payload and an inclusive 8-bit LFSR threshold. 0xff
+        # makes the source-level mutation deterministic while retaining a
+        # seeded random gate for the next DSL extension.
+        word1 = (effect_payload << 8) | 0xFF
         slots[slot] = (word0 << 16) | word1
 
     packed = tuple(

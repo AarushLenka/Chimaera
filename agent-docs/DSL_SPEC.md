@@ -255,13 +255,14 @@ the compiler also emits `.loader.bin` and marks the manifest
 `chip_loadable: true`. The backend lowers conditions through helper descriptors,
 enforces the 32-descriptor post-lowering limit, and emits the exact loader format
 in `PHASE5_ABI_PROPOSAL.md`. The first Phase 6 mutation slice additionally
-lowers `flip bits <mask> in <sampled_variable>` when its condition is an equality
-against that same sampled variable; the seed and four-record-per-context fault
-table travel in separate loader frames. Delay, NACK/drop, pin-hold, duplicate,
-late-release, and contract blocks retain host-model information but remain
-chip-loadable only after their corresponding hardware records exist. Pattern
-events, seeded `random_bits` conditions, and per-state bidirectional direction
-changes are likewise still outstanding.
+lowers `flip bits <mask> in <sampled_variable>` and `delay next action by <N>
+cycles` when their condition is an equality against that same sampled variable
+and the payload fits one byte. The seed and four-record-per-context fault table
+travel in separate loader frames. NACK/drop, pin-hold, duplicate, late-release,
+and contract blocks retain host-model information but remain chip-loadable only
+after their corresponding hardware records exist. Pattern events, seeded
+`random_bits` conditions, and per-state bidirectional direction changes are
+likewise still outstanding.
 The manifest also exposes the loaded runtime's maximum rearm latency and minimum
 safe inter-event spacing. With two contexts this is currently a two-cycle
 assumption; a future timing-requirement declaration must let the compiler prove

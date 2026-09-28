@@ -261,3 +261,25 @@ NACK/drop, pin hold, edge duplication, late release, random conditions, and
 contracts remain explicit Phase 6 work; their source information is not silently
 discarded.
 **Status:** proposed
+
+## 2026-09-28 — Add bounded delayed-action mutation
+
+**Context:** The separate mutation record has an effect payload byte and the
+reaction cell already owns the predecoded action registers. A delay mutation can
+therefore change output timing while leaving descriptor successor/reload timing
+and the fixed descriptor ABI unchanged.
+**Decision:** Interpret effect kind `2` as `delay_action`, using the payload byte
+as a one-to-255-cycle delay. Apply it after a matching sampled-variable
+condition, hold the predecoded action in a small pending register, and commit it
+after the requested clocks. Keep the existing open-drain output mask after the
+delay stage.
+**Alternatives considered:** Rewriting the descriptor timeout or successor
+fields would alter protocol control flow and make delay depend on descriptor
+rearming. Supporting 16-bit delays in this first record would consume another
+word before the timing semantics are proven; the compiler rejects values above
+255 for this slice.
+**Consequences:** `delay next action by N cycles` is now compiler-, model-, and
+RTL-loadable for the same equality condition as sampled-value flips. Overlapping
+delayed actions and the remaining pin-level effects still need explicit safety
+checks and demos.
+**Status:** proposed

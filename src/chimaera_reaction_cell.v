@@ -34,6 +34,7 @@ module chimaera_reaction_cell #(
     input  wire [7:0]             load_action_value,
     input  wire [7:0]             load_oe_mask,
     input  wire [7:0]             load_oe_value,
+    input  wire [7:0]             fault_delay,
 
     output wire                   fire,
     output wire                   fire_from_timeout,
@@ -65,6 +66,12 @@ module chimaera_reaction_cell #(
   reg [7:0]                   action_value;
   reg [7:0]                   oe_mask;
   reg [7:0]                   oe_value;
+  reg                         delayed_action_pending;
+  reg [7:0]                   delayed_action_timer;
+  reg [7:0]                   delayed_action_mask;
+  reg [7:0]                   delayed_action_value;
+  reg [7:0]                   delayed_oe_mask;
+  reg [7:0]                   delayed_oe_value;
 
   reg event_match;
 
@@ -110,16 +117,44 @@ module chimaera_reaction_cell #(
       action_value <= 8'h00;
       oe_mask      <= 8'h00;
       oe_value     <= 8'h00;
+      delayed_action_pending <= 1'b0;
+      delayed_action_timer   <= 8'h00;
+      delayed_action_mask    <= 8'h00;
+      delayed_action_value   <= 8'h00;
+      delayed_oe_mask        <= 8'h00;
+      delayed_oe_value       <= 8'h00;
       drive_value  <= RESET_DRIVE_VALUE;
       drive_enable <= RESET_DRIVE_ENABLE;
     end else begin
+      if (delayed_action_pending) begin
+        if (delayed_action_timer == 8'h01) begin
+          drive_value  <= (drive_value  & ~delayed_action_mask) |
+                          (delayed_action_value & delayed_action_mask);
+          drive_enable <= (drive_enable & ~delayed_oe_mask) |
+                          (delayed_oe_value & delayed_oe_mask);
+          delayed_action_pending <= 1'b0;
+          delayed_action_timer   <= 8'h00;
+        end else begin
+          delayed_action_timer <= delayed_action_timer - 8'h01;
+        end
+      end
+
       if (fire) begin
         // This is the fixed-latency fast path.  No result from shared
         // bookkeeping participates in the action being committed here.
-        drive_value  <= (drive_value  & ~action_mask) |
-                        (action_value &  action_mask);
-        drive_enable <= (drive_enable & ~oe_mask) |
-                        (oe_value     &  oe_mask);
+        if (fault_delay == 8'h00) begin
+          drive_value  <= (drive_value  & ~action_mask) |
+                          (action_value &  action_mask);
+          drive_enable <= (drive_enable & ~oe_mask) |
+                          (oe_value     &  oe_mask);
+        end else begin
+          delayed_action_pending <= 1'b1;
+          delayed_action_timer   <= fault_delay;
+          delayed_action_mask    <= action_mask;
+          delayed_action_value   <= action_value;
+          delayed_oe_mask        <= oe_mask;
+          delayed_oe_value       <= oe_value;
+        end
       end
 
       if (load) begin

@@ -301,3 +301,15 @@ Verification passed locally: 24 dependency-free host tests, six standalone
 Icarus benches including the new seed/mutation frame test, Verilator lint, and
 Yosys elaboration/synthesis preparation. The generic Yosys result is directional
 only; the hosted IHP workflow remains the physical gate after the eventual push.
+
+## 2026-09-28 — Add bounded delayed-action mutation
+
+The same four-record table now supports effect kind `2`: a one-to-255-cycle
+delay of the predecoded output action. The reaction cell holds the action while
+the normal state successor and descriptor reload continue, then commits the
+action after the requested clocks. A targeted four-cycle model/RTL replay proves
+the delayed output timing; the previous sampled-bit mutation behavior remains
+covered.
+
+The expanded local checks pass: 26 dependency-free host tests, six standalone
+Icarus benches, and Verilator lint. No hosted push was made.

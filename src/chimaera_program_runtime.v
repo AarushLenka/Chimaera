@@ -63,6 +63,8 @@ module chimaera_program_runtime (
   wire [7:0] current_shift_1;
   wire [7:0] post_shift_0;
   wire [7:0] post_shift_1;
+  wire [7:0] mutation_delay_0;
+  wire [7:0] mutation_delay_1;
 
   function [15:0] next_lfsr;
     input [15:0] current;
@@ -158,6 +160,7 @@ module chimaera_program_runtime (
       .next_state_0(next_state_0),
       .current_shift_0(current_shift_0),
       .post_shift_0(post_shift_0),
+      .mutation_delay_0(mutation_delay_0),
       .fire_1(fire_1),
       .fire_timeout_1(fire_timeout_1),
       .fire_sample_1(fire_sample_1),
@@ -165,7 +168,8 @@ module chimaera_program_runtime (
       .mutation_config_1(mutation_config_1),
       .next_state_1(next_state_1),
       .current_shift_1(current_shift_1),
-      .post_shift_1(post_shift_1)
+      .post_shift_1(post_shift_1),
+      .mutation_delay_1(mutation_delay_1)
   );
 
   chimaera_reaction_cell #(
@@ -192,6 +196,7 @@ module chimaera_program_runtime (
       .load_action_value(selected_action_value_0),
       .load_oe_mask(descriptor_data[82:75]),
       .load_oe_value(descriptor_data[90:83]),
+      .fault_delay(mutation_delay_0),
       .fire(fire_0),
       .fire_from_timeout(fire_timeout_0),
       .fire_sample(fire_sample_0),
@@ -224,6 +229,7 @@ module chimaera_program_runtime (
       .load_action_value(selected_action_value_1),
       .load_oe_mask(descriptor_data[82:75]),
       .load_oe_value(descriptor_data[90:83]),
+      .fault_delay(mutation_delay_1),
       .fire(fire_1),
       .fire_from_timeout(fire_timeout_1),
       .fire_sample(fire_sample_1),
