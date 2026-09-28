@@ -39,9 +39,8 @@ bash scripts/local-harden.sh
 
 It requires the native LibreLane tools and the IHP SG13C5L PDK in `PDK_ROOT`.
 The checked-in `config.local.json` mirrors the project hardening settings while
-leaving the generated `runs/` output untracked. The GitHub GDS workflow is
-manual-only, so it remains available as the final hosted gate without running on
-every push.
+leaving the generated `runs/` output untracked. The GitHub GDS workflow runs on
+push and is the authoritative verification gate for the design.
 
 ## Enable GitHub actions to build the results page
 

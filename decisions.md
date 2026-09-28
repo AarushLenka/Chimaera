@@ -200,3 +200,22 @@ the final independent hosted check and its generated artifacts.
 IHP-backed hosted check remains one deliberate manual action and is not replaced
 by generic Yosys results.
 **Status:** confirmed by Hausen
+
+## 2026-09-28 — Restore push-triggered hosted hardening
+
+**Context:** The first push-triggered GDS run completed successfully after its
+long hosted queue and hardening time. Hausen chose to use pushes as the project
+verification mechanism instead of relying on the unfinished local hardening
+setup.
+**Decision:** Restore the `push` trigger in `.github/workflows/gds.yaml` and treat
+the hosted GDS, precheck, gate-level test, and viewer chain as the authoritative
+gate for subsequent commits. Keep the local scripts available as optional tools,
+but do not make them a phase prerequisite.
+**Alternatives considered:** Keeping GDS manual-only would reduce wait time but
+would no longer match the chosen push-based review loop. Requiring local
+LibreLane would block progress on environment dependencies that are not needed
+for the successful hosted path.
+**Consequences:** Each pushed change starts the long hosted chain, so commits
+should remain focused and small. The next feature work must still respect the
+Phase 5 human DSL usability gate before Phase 6 scope is added.
+**Status:** confirmed by Hausen

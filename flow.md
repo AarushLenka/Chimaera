@@ -259,3 +259,14 @@ active Python environment; the script requires it explicitly when
 The GDS workflow is now manual-only. This keeps the full hosted IHP hardening,
 precheck, gate-level simulation, and viewer chain available as a final independent
 check without making every development push wait for it.
+
+## 2026-09-28 — Return to push-based hosted verification
+
+Hausen confirmed that the last push-triggered GDS workflow eventually completed
+successfully after roughly four and a half hours. The project therefore returns
+to push-based verification: the GDS workflow once again runs on every push, and
+its hosted IHP hardening, precheck, gate-level simulation, and viewer results are
+the authoritative gate for future commits. The local LibreLane entry point stays
+available, but local hardening is no longer required for this work loop. Phase 5
+still has one documented human gate—Hausen must personally write and compile a
+small DSL program—before Phase 6 features should begin.
