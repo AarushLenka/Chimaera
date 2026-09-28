@@ -11,6 +11,8 @@ module chimaera_generic_execution_engine (
     input  wire        fire_timeout_0,
     input  wire [7:0]  fire_sample_0,
     input  wire [34:0] control_0,
+    input  wire [127:0] mutation_config_0,
+    input  wire [15:0]  fault_lfsr,
     output wire [4:0]  next_state_0,
     output wire [7:0]  current_shift_0,
     output wire [7:0]  post_shift_0,
@@ -19,6 +21,7 @@ module chimaera_generic_execution_engine (
     input  wire        fire_timeout_1,
     input  wire [7:0]  fire_sample_1,
     input  wire [34:0] control_1,
+    input  wire [127:0] mutation_config_1,
     output wire [4:0]  next_state_1,
     output wire [7:0]  current_shift_1,
     output wire [7:0]  post_shift_1
@@ -31,6 +34,8 @@ module chimaera_generic_execution_engine (
 
   wire [7:0] shift_after_0;
   wire [7:0] shift_after_1;
+  reg [7:0] faulted_shift_0;
+  reg [7:0] faulted_shift_1;
   wire [3:0] count_after_0;
   wire [3:0] count_after_1;
   wire condition_0;
@@ -82,9 +87,41 @@ module chimaera_generic_execution_engine (
   assign count_after_1 = next_count(count_1, control_1[30], control_1[29]);
 
   assign condition_0 = (!control_0[15] || count_after_0 == control_0[19:16]) &&
-                       (!control_0[20] || shift_after_0 == control_0[28:21]);
+                       (!control_0[20] || faulted_shift_0 == control_0[28:21]);
   assign condition_1 = (!control_1[15] || count_after_1 == control_1[19:16]) &&
-                       (!control_1[20] || shift_after_1 == control_1[28:21]);
+                       (!control_1[20] || faulted_shift_1 == control_1[28:21]);
+
+  integer mutation_slot_0;
+  integer mutation_slot_1;
+  always @(*) begin
+    faulted_shift_0 = shift_after_0;
+    for (mutation_slot_0 = 0; mutation_slot_0 < 4; mutation_slot_0 = mutation_slot_0 + 1) begin
+      if (mutation_config_0[mutation_slot_0 * 32 + 31] &&
+          mutation_config_0[mutation_slot_0 * 32 + 28 +: 3] == 3'd1 &&
+          mutation_config_0[mutation_slot_0 * 32 + 24 +: 4] == 4'd1 &&
+          shift_after_0 == mutation_config_0[mutation_slot_0 * 32 + 16 +: 8] &&
+          (fault_lfsr[7:0] ^ fault_lfsr[15:8]) <=
+              mutation_config_0[mutation_slot_0 * 32 +: 8]) begin
+        faulted_shift_0 = faulted_shift_0 ^
+            mutation_config_0[mutation_slot_0 * 32 + 8 +: 8];
+      end
+    end
+  end
+
+  always @(*) begin
+    faulted_shift_1 = shift_after_1;
+    for (mutation_slot_1 = 0; mutation_slot_1 < 4; mutation_slot_1 = mutation_slot_1 + 1) begin
+      if (mutation_config_1[mutation_slot_1 * 32 + 31] &&
+          mutation_config_1[mutation_slot_1 * 32 + 28 +: 3] == 3'd1 &&
+          mutation_config_1[mutation_slot_1 * 32 + 24 +: 4] == 4'd1 &&
+          shift_after_1 == mutation_config_1[mutation_slot_1 * 32 + 16 +: 8] &&
+          (fault_lfsr[7:0] ^ fault_lfsr[15:8]) <=
+              mutation_config_1[mutation_slot_1 * 32 +: 8]) begin
+        faulted_shift_1 = faulted_shift_1 ^
+            mutation_config_1[mutation_slot_1 * 32 + 8 +: 8];
+      end
+    end
+  end
 
   assign next_state_0 = fire_timeout_0 ? control_0[14:10] :
                         condition_0 ? control_0[4:0] : control_0[9:5];
@@ -92,8 +129,8 @@ module chimaera_generic_execution_engine (
                         condition_1 ? control_1[4:0] : control_1[9:5];
   assign current_shift_0 = shift_0;
   assign current_shift_1 = shift_1;
-  assign post_shift_0 = shift_after_0;
-  assign post_shift_1 = shift_after_1;
+  assign post_shift_0 = faulted_shift_0;
+  assign post_shift_1 = faulted_shift_1;
 
   always @(posedge clk) begin
     if (!rst_n) begin
@@ -103,11 +140,11 @@ module chimaera_generic_execution_engine (
       count_1 <= 4'd0;
     end else begin
       if (fire_0) begin
-        shift_0 <= shift_after_0;
+        shift_0 <= faulted_shift_0;
         count_0 <= count_after_0;
       end
       if (fire_1) begin
-        shift_1 <= shift_after_1;
+        shift_1 <= faulted_shift_1;
         count_1 <= count_after_1;
       end
     end

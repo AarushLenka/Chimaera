@@ -67,6 +67,9 @@ module tt_um_chimaera (
   wire                   loaded_load_in_progress;
   wire [5:0]             loaded_descriptor_count;
   wire [15:0]            loaded_crc;
+  wire [15:0]            loaded_fault_seed;
+  wire [127:0]           loaded_mutation_config_0;
+  wire [127:0]           loaded_mutation_config_1;
   wire [31:0]            cfg_status_word;
   wire [7:0]             loaded_drive_value_0;
   wire [7:0]             loaded_drive_enable_0;
@@ -145,6 +148,9 @@ module tt_um_chimaera (
       .load_in_progress       (loaded_load_in_progress),
       .loaded_descriptor_count(loaded_descriptor_count),
       .computed_crc           (loaded_crc),
+      .fault_seed             (loaded_fault_seed),
+      .mutation_config_0      (loaded_mutation_config_0),
+      .mutation_config_1      (loaded_mutation_config_1),
       .status_word            (cfg_status_word)
   );
 
@@ -160,6 +166,9 @@ module tt_um_chimaera (
       .sync_inputs         (synchronized_inputs),
       .rise_edges          (rising_edges),
       .fall_edges          (falling_edges),
+      .fault_seed          (loaded_fault_seed),
+      .mutation_config_0   (loaded_mutation_config_0),
+      .mutation_config_1   (loaded_mutation_config_1),
       .drive_value_0       (loaded_drive_value_0),
       .drive_enable_0      (loaded_drive_enable_0),
       .drive_value_1       (loaded_drive_value_1),
@@ -328,6 +337,8 @@ module tt_um_chimaera (
   wire _unused = &{ena, ui_in[7:5], cell_fire_from_timeout_0,
                    cell_fire_from_timeout_1, received_strobe,
                    loaded_load_error, loaded_descriptor_count, loaded_crc,
+                   loaded_fault_seed, loaded_mutation_config_0,
+                   loaded_mutation_config_1,
                    cfg_status_word, loaded_fire_0, loaded_fire_1, 1'b0};
 
 endmodule

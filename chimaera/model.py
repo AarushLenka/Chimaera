@@ -72,6 +72,13 @@ def _eval_expr(expression: Mapping[str, Any], values: Mapping[str, int]) -> int:
     raise CompileError(f"unsupported expression kind {kind!r}")
 
 
+def _advance_lfsr(value: int) -> int:
+    """Advance the shared 16-bit x^16+x^14+x^13+x^11+1 LFSR."""
+
+    feedback = ((value >> 15) ^ (value >> 13) ^ (value >> 12) ^ (value >> 10)) & 1
+    return ((value << 1) & 0xFFFF) | feedback
+
+
 class ReferenceModel:
     """Model one compiled protocol context at synchronized-clock granularity."""
 
@@ -79,11 +86,17 @@ class ReferenceModel:
         matches = [item for item in compilation.ir["protocols"] if item["name"] == protocol]
         if not matches:
             raise CompileError(f"compiled program has no protocol {protocol!r}")
-        if compilation.ir["mutations"]:
-            raise CompileError("mutation execution is not implemented in the Phase 5 checkpoint model")
         self.protocol = matches[0]
         self.states = {state["id"]: state for state in self.protocol["states"]}
         self.pin_indexes = {pin["name"]: pin["index"] for pin in self.protocol["pins"]}
+        self.mutations = [
+            mutation
+            for mutation in compilation.ir.get("mutations", [])
+            if mutation["protocol"] == protocol
+        ]
+        self.fault_lfsr = int(compilation.ir.get("fault_seed", 1))
+        if self.fault_lfsr == 0:
+            raise CompileError("fault seed must be non-zero")
         self.state_id = int(self.protocol["entry_state"])
         self.timer = int(self.states[self.state_id]["timeout_cycles"])
         self.previous_inputs = 0
@@ -125,7 +138,7 @@ class ReferenceModel:
             matched = (inputs & level_mask) == (int(state["level_value"]) & level_mask)
         return matched
 
-    def step(self, synchronized_inputs: int) -> StepResult:
+    def step(self, synchronized_inputs: int, *, advance_fault: bool = True) -> StepResult:
         """Advance one clock using the already-synchronized 8-bit input sample."""
 
         if not 0 <= synchronized_inputs <= 0xFF:
@@ -155,6 +168,29 @@ class ReferenceModel:
                     self.variables[name] = (self.variables.get(name, 0) + 1) & 0xFFFF
                 elif action["kind"] == "reset":
                     self.variables[action["variable"]] = 0
+
+            # The first hardware fault slice mutates the sampled shift
+            # register after the normal action update. This ordering makes a
+            # captured byte reproducible while keeping output actions at the
+            # original fixed one-cycle reaction point.
+            mutation_values = self._condition_values(synchronized_inputs)
+            for mutation in self.mutations:
+                effect = mutation["effect"]
+                if effect["kind"] != "flip_bits":
+                    raise CompileError(
+                        f"reference model cannot execute mutation effect {effect['kind']!r}"
+                    )
+                if _eval_expr(mutation["condition"], mutation_values):
+                    variable = effect["variable"]
+                    if variable not in self.variables:
+                        raise CompileError(
+                            f"reference model has no mutation variable {variable!r}"
+                        )
+                    self.variables[variable] = (
+                        self.variables[variable] ^ int(effect["mask"] or 0)
+                    ) & 0xFFFF
+            if advance_fault:
+                self.fault_lfsr = _advance_lfsr(self.fault_lfsr)
 
             next_state = self.state_id
             if from_timeout:
@@ -217,6 +253,7 @@ class ChipReferenceModel:
                 if pin["mode"] == "open_drain":
                     self.open_drain_mask |= 1 << int(pin["index"])
         self.pending_context: str | None = None
+        self.fault_lfsr = int(compilation.ir.get("fault_seed", 1))
 
     def step(self, synchronized_inputs: int) -> ChipStepResult:
         rearming = self.pending_context
@@ -224,11 +261,15 @@ class ChipReferenceModel:
             name: (
                 context.rearm_step(synchronized_inputs)
                 if name == rearming
-                else context.step(synchronized_inputs)
+                else self._step_context(context, synchronized_inputs)
             )
             for name, context in self.contexts.items()
         }
         fired = [name for name, result in context_results.items() if result.fired]
+        if fired:
+            self.fault_lfsr = _advance_lfsr(self.fault_lfsr)
+            for context in self.contexts.values():
+                context.fault_lfsr = self.fault_lfsr
         if rearming is not None:
             # The pending reload owns this edge's single descriptor read. With
             # two contexts, at most the other context can generate new work.
@@ -248,3 +289,7 @@ class ChipReferenceModel:
         if drive_value & drive_enable & self.open_drain_mask:
             raise CompileError("reference model attempted an active-high open-drain drive")
         return ChipStepResult(context_results, drive_value & 0xFF, drive_enable & 0xFF)
+
+    def _step_context(self, context: ReferenceModel, synchronized_inputs: int) -> StepResult:
+        context.fault_lfsr = self.fault_lfsr
+        return context.step(synchronized_inputs, advance_fault=False)

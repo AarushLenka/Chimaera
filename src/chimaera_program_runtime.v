@@ -24,6 +24,9 @@ module chimaera_program_runtime (
     input  wire [7:0]   sync_inputs,
     input  wire [7:0]   rise_edges,
     input  wire [7:0]   fall_edges,
+    input  wire [15:0]  fault_seed,
+    input  wire [127:0] mutation_config_0,
+    input  wire [127:0] mutation_config_1,
     output wire [7:0]   drive_value_0,
     output wire [7:0]   drive_enable_0,
     output wire [7:0]   drive_value_1,
@@ -40,6 +43,7 @@ module chimaera_program_runtime (
   reg [4:0] pending_state_0;
   reg [4:0] pending_state_1;
   reg was_running;
+  reg [15:0] fault_lfsr;
   reg [34:0] active_control_0;
   reg [34:0] active_control_1;
 
@@ -59,6 +63,16 @@ module chimaera_program_runtime (
   wire [7:0] current_shift_1;
   wire [7:0] post_shift_0;
   wire [7:0] post_shift_1;
+
+  function [15:0] next_lfsr;
+    input [15:0] current;
+    begin
+      next_lfsr = {
+          current[14:0],
+          current[15] ^ current[13] ^ current[12] ^ current[10]
+      };
+    end
+  endfunction
 
   wire [4:0] request_state_0 = pending_0 ? pending_state_0 : next_state_0;
   wire [4:0] request_state_1 = pending_1 ? pending_state_1 : next_state_1;
@@ -99,6 +113,7 @@ module chimaera_program_runtime (
       pending_state_0 <= 5'd0;
       pending_state_1 <= 5'd0;
       was_running <= 1'b0;
+      fault_lfsr <= (fault_seed == 16'h0000) ? 16'h0001 : fault_seed;
       active_control_0 <= 35'd0;
       active_control_1 <= 35'd0;
     end else begin
@@ -126,6 +141,8 @@ module chimaera_program_runtime (
         active_control_0 <= descriptor_data[125:91];
       if (load_1)
         active_control_1 <= descriptor_data[125:91];
+      if (fire_0 || fire_1)
+        fault_lfsr <= next_lfsr(fault_lfsr);
     end
   end
 
@@ -136,6 +153,8 @@ module chimaera_program_runtime (
       .fire_timeout_0(fire_timeout_0),
       .fire_sample_0(fire_sample_0),
       .control_0(active_control_0),
+      .mutation_config_0(mutation_config_0),
+      .fault_lfsr(fault_lfsr),
       .next_state_0(next_state_0),
       .current_shift_0(current_shift_0),
       .post_shift_0(post_shift_0),
@@ -143,6 +162,7 @@ module chimaera_program_runtime (
       .fire_timeout_1(fire_timeout_1),
       .fire_sample_1(fire_sample_1),
       .control_1(active_control_1),
+      .mutation_config_1(mutation_config_1),
       .next_state_1(next_state_1),
       .current_shift_1(current_shift_1),
       .post_shift_1(post_shift_1)

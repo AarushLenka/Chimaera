@@ -27,7 +27,10 @@ module chimaera_program_loader (
     output reg          load_error,
     output wire         load_in_progress,
     output reg  [5:0]   loaded_descriptor_count,
-    output reg  [15:0]  computed_crc
+    output reg  [15:0]  computed_crc,
+    output reg  [15:0]  fault_seed,
+    output wire [127:0] mutation_config_0,
+    output wire [127:0] mutation_config_1
 );
 
   localparam [3:0] OP_BEGIN            = 4'h0;
@@ -35,6 +38,8 @@ module chimaera_program_loader (
   localparam [3:0] OP_SET_CONTEXT      = 4'h2;
   localparam [3:0] OP_CONTROL          = 4'h3;
   localparam [3:0] OP_SET_PIN_MODES    = 4'h4;
+  localparam [3:0] OP_SET_FAULT_SEED   = 4'h5;
+  localparam [3:0] OP_WRITE_MUTATION   = 4'h6;
   localparam [3:0] OP_COMMIT           = 4'he;
 
   reg [127:0] descriptor_memory [0:31];
@@ -42,6 +47,9 @@ module chimaera_program_loader (
   reg [4:0]   expected_state;
   reg [2:0]   expected_word;
   reg [4:0]   highest_target;
+  reg [31:0]  mutation_memory_0 [0:3];
+  reg [31:0]  mutation_memory_1 [0:3];
+  integer mutation_index;
 
   wire [3:0]  frame_opcode = frame_data[31:28];
   wire        frame_context = frame_data[27];
@@ -52,6 +60,14 @@ module chimaera_program_loader (
 
   assign descriptor_data = descriptor_memory[descriptor_address];
   assign load_in_progress = load_active;
+  assign mutation_config_0 = {
+      mutation_memory_0[3], mutation_memory_0[2],
+      mutation_memory_0[1], mutation_memory_0[0]
+  };
+  assign mutation_config_1 = {
+      mutation_memory_1[3], mutation_memory_1[2],
+      mutation_memory_1[1], mutation_memory_1[0]
+  };
 
   function [15:0] crc16_byte;
     input [15:0] crc_in;
@@ -93,6 +109,11 @@ module chimaera_program_loader (
       expected_state         <= 5'd0;
       expected_word          <= 3'd0;
       highest_target         <= 5'd0;
+      fault_seed             <= 16'h0001;
+      for (mutation_index = 0; mutation_index < 4; mutation_index = mutation_index + 1) begin
+        mutation_memory_0[mutation_index] <= 32'h00000000;
+        mutation_memory_1[mutation_index] <= 32'h00000000;
+      end
     end else if (frame_strobe) begin
       if (frame_data[18:16] != 3'b000) begin
         load_error <= 1'b1;
@@ -111,6 +132,11 @@ module chimaera_program_loader (
           expected_state          <= 5'd0;
           expected_word           <= 3'd0;
           highest_target          <= 5'd0;
+          fault_seed              <= 16'h0001;
+          for (mutation_index = 0; mutation_index < 4; mutation_index = mutation_index + 1) begin
+            mutation_memory_0[mutation_index] <= 32'h00000000;
+            mutation_memory_1[mutation_index] <= 32'h00000000;
+          end
         end
 
         OP_WRITE_DESCRIPTOR: begin
@@ -185,6 +211,33 @@ module chimaera_program_loader (
             load_error <= 1'b1;
           end else begin
             open_drain_mask <= frame_payload[7:0];
+          end
+        end
+
+        OP_SET_FAULT_SEED: begin
+          if (!load_active || load_error || frame_context ||
+              frame_address != 5'd0 || frame_word != 3'd0 ||
+              frame_payload == 16'h0000) begin
+            load_error <= 1'b1;
+          end else begin
+            fault_seed <= frame_payload;
+          end
+        end
+
+        OP_WRITE_MUTATION: begin
+          if (!load_active || load_error || frame_address >= 5'd4 ||
+              frame_word >= 3'd2) begin
+            load_error <= 1'b1;
+          end else if (!frame_context) begin
+            if (frame_word == 3'd0)
+              mutation_memory_0[frame_address[1:0]][31:16] <= frame_payload;
+            else
+              mutation_memory_0[frame_address[1:0]][15:0] <= frame_payload;
+          end else begin
+            if (frame_word == 3'd0)
+              mutation_memory_1[frame_address[1:0]][31:16] <= frame_payload;
+            else
+              mutation_memory_1[frame_address[1:0]][15:0] <= frame_payload;
           end
         end
 

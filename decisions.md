@@ -237,3 +237,27 @@ for the successful hosted path.
 should remain focused and small. The next feature work must still respect the
 Phase 5 human DSL usability gate before Phase 6 scope is added.
 **Status:** confirmed by Hausen
+
+## 2026-09-28 — Add a separate Phase 6 mutation record path
+
+**Context:** The Phase 5 descriptor uses all functional fields and must retain
+its fixed-latency 128-bit ABI. Phase 6 needs a deterministic fault seed and
+conditional mutation state without widening every descriptor or changing its
+CRC stream.
+**Decision:** Preserve the descriptor format and add loader opcode `0x5` for a
+non-zero 16-bit shared LFSR seed plus opcode `0x6` for four 32-bit mutation
+records per context. The first lowerable effect is conditional `flip bits` on a
+sampled shift variable after its post-sample value matches an eight-bit literal.
+The LFSR advances on each fired context edge; the compiler emits an always-pass
+threshold for this deterministic source form.
+**Alternatives considered:** Widening descriptors would change the accepted
+loader ABI, CRC layout, runtime read path, and all existing streams. Encoding a
+mutation in the two reserved descriptor bits cannot carry its condition and
+effect mask. Implementing all DSL effects in one step would hide separate timing
+and pin-safety risks behind an untestable large change.
+**Consequences:** Mutation-bearing sources with this supported form are now
+chip-loadable and replayed against the reference model and RTL. Delay,
+NACK/drop, pin hold, edge duplication, late release, random conditions, and
+contracts remain explicit Phase 6 work; their source information is not silently
+discarded.
+**Status:** proposed

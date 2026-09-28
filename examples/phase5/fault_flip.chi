@@ -1,0 +1,32 @@
+// Phase 6 sampled-data fault injection example.
+protocol sampled_fault {
+    pin data input
+    pin response output
+
+    state idle {
+        on rise(data) {
+            sample data into sample
+        }
+        when sample == 0 -> corrupted
+        when sample == 1 -> intact
+    }
+
+    state corrupted {
+        on fall(data) {
+            drive response high
+            goto idle
+        }
+    }
+
+    state intact {
+        on fall(data) {
+            drive response low
+            goto idle
+        }
+    }
+}
+
+mutation flip_sample for sampled_fault {
+    when sample == 0x01
+    flip bits 0x01 in sample
+}

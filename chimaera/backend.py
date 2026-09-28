@@ -17,6 +17,8 @@ OP_WRITE_DESCRIPTOR = 0x1
 OP_SET_CONTEXT = 0x2
 OP_CONTROL = 0x3
 OP_SET_PIN_MODES = 0x4
+OP_SET_FAULT_SEED = 0x5
+OP_WRITE_MUTATION = 0x6
 OP_COMMIT = 0xE
 
 EVENT_LEVEL = 3
@@ -34,6 +36,8 @@ class PackedProgram:
     context_entries: tuple[int, ...]
     open_drain_mask: int
     crc16: int
+    fault_seed: int
+    mutation_config: tuple[int, int]
     loader_frames: tuple[int, ...]
 
     @property
@@ -191,11 +195,89 @@ def _pack_descriptor(fields: Mapping[str, int]) -> int:
     return descriptor
 
 
+def _mutation_condition(expression: Mapping[str, Any]) -> tuple[str, int]:
+    if expression.get("kind") != "binary" or expression.get("value") != "==":
+        raise PackingError(
+            "Phase 6 mutation conditions currently support one variable == integer term"
+        )
+    left = expression.get("left")
+    right = expression.get("right")
+    if not isinstance(left, Mapping) or not isinstance(right, Mapping):
+        raise PackingError("mutation equality must compare a variable with an integer")
+    if left.get("kind") == "name" and right.get("kind") == "number":
+        return str(left["value"]), int(right["value"])
+    if right.get("kind") == "name" and left.get("kind") == "number":
+        return str(right["value"]), int(left["value"])
+    raise PackingError("mutation equality must compare a variable with an integer")
+
+
+def _pack_mutations(
+    ir: Mapping[str, Any],
+    protocols: list[Mapping[str, Any]],
+    variables: Mapping[str, tuple[str | None, str | None]],
+) -> tuple[int, tuple[int, int]]:
+    """Pack the first hardware mutation slice into two-context fault tables.
+
+    Each context has four 32-bit records, represented as two 16-bit loader
+    words. The initial slice mutates the sampled shift register when its
+    post-sample value equals the declared condition. The low byte of word one
+    is a deterministic LFSR threshold; the compiler emits 0xff for the
+    unconditional form supported by the DSL today.
+    """
+
+    seed = int(ir.get("fault_seed", 1))
+    if not 1 <= seed <= 0xFFFF:
+        raise PackingError("fault seed must be a non-zero 16-bit value")
+    protocol_index = {str(protocol["name"]): index for index, protocol in enumerate(protocols)}
+    records = [[0 for _ in range(4)] for _ in protocols]
+    for mutation in ir.get("mutations", []):
+        protocol_name = str(mutation["protocol"])
+        context = protocol_index[protocol_name]
+        slots = records[context]
+        slot = next((index for index, value in enumerate(slots) if value == 0), None)
+        if slot is None:
+            raise PackingError(
+                f"protocol {protocol_name!r} exceeds the four-record mutation table"
+            )
+        effect = mutation["effect"]
+        if effect.get("kind") != "flip_bits":
+            raise PackingError(
+                "Phase 6 hardware lowering currently supports only flip bits mutations"
+            )
+        shift_variable, _ = variables[protocol_name]
+        if shift_variable is None or effect.get("variable") != shift_variable:
+            raise PackingError(
+                "flip bits mutations must target the protocol's sampled shift variable"
+            )
+        condition_name, condition_value = _mutation_condition(mutation["condition"])
+        if condition_name != shift_variable:
+            raise PackingError(
+                "mutation conditions must compare the sampled shift variable"
+            )
+        if not 0 <= condition_value <= 0xFF:
+            raise PackingError("mutation condition value must fit eight bits")
+        mask = int(effect.get("mask") or 0)
+        if not 1 <= mask <= 0xFF:
+            raise PackingError("flip bits mutation mask must fit a non-zero byte")
+        # word 0: enable, effect kind 1 (flip sample), condition kind 1
+        # (shift equality), and the post-sample comparison value.
+        word0 = 0x8000 | (1 << 12) | (1 << 8) | condition_value
+        # word 1: XOR mask and an inclusive 8-bit LFSR threshold. 0xff makes
+        # the source-level mutation deterministic while retaining a seeded
+        # random gate for the next DSL extension.
+        word1 = (mask << 8) | 0xFF
+        slots[slot] = (word0 << 16) | word1
+
+    packed = tuple(
+        sum(record << (slot * 32) for slot, record in enumerate(context_records))
+        for context_records in records
+    )
+    return seed, (packed[0] if packed else 0, packed[1] if len(packed) > 1 else 0)
+
+
 def pack_program(ir: Mapping[str, Any]) -> PackedProgram:
     """Lower protocol-only IR to loader frames for the fixed descriptor ABI."""
 
-    if ir.get("mutations"):
-        raise PackingError("mutation records await the Phase 6 hardware format")
     if ir.get("contracts"):
         raise PackingError("contract records await the Phase 6 hardware format")
     protocols = list(ir["protocols"])
@@ -206,6 +288,7 @@ def pack_program(ir: Mapping[str, Any]) -> PackedProgram:
         protocol["name"]: _protocol_variables(protocol)
         for protocol in protocols
     }
+    fault_seed, mutation_config = _pack_mutations(ir, protocols, variables)
     global_ids: dict[tuple[str, int], int] = {}
     next_id = 0
     for protocol in protocols:
@@ -348,6 +431,31 @@ def pack_program(ir: Mapping[str, Any]) -> PackedProgram:
     crc = crc16_ccitt(bytes(descriptor_bytes))
     for context, entry in enumerate(entries):
         frames.append(_frame(OP_SET_CONTEXT, context=context, data=0x20 | entry))
+    if ir.get("mutations") or fault_seed != 1:
+        frames.append(_frame(OP_SET_FAULT_SEED, data=fault_seed))
+        for context, config in enumerate(mutation_config):
+            for slot in range(4):
+                record = (config >> (slot * 32)) & 0xFFFFFFFF
+                if record == 0:
+                    continue
+                frames.append(
+                    _frame(
+                        OP_WRITE_MUTATION,
+                        context=context,
+                        address=slot,
+                        word=0,
+                        data=(record >> 16) & 0xFFFF,
+                    )
+                )
+                frames.append(
+                    _frame(
+                        OP_WRITE_MUTATION,
+                        context=context,
+                        address=slot,
+                        word=1,
+                        data=record & 0xFFFF,
+                    )
+                )
     open_drain_mask = 0
     for protocol in protocols:
         for pin in protocol["pins"]:
@@ -362,4 +470,12 @@ def pack_program(ir: Mapping[str, Any]) -> PackedProgram:
         )
     )
     frames.append(_frame(OP_CONTROL, data=1))
-    return PackedProgram(tuple(packed), entries, open_drain_mask, crc, tuple(frames))
+    return PackedProgram(
+        tuple(packed),
+        entries,
+        open_drain_mask,
+        crc,
+        fault_seed,
+        mutation_config,
+        tuple(frames),
+    )

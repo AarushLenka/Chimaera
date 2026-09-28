@@ -14,6 +14,8 @@ PROJECT_SOURCES = chimaera_input_frontend.v chimaera_uart_program.v chimaera_i2c
 phase5:
 	iverilog -g2012 -s program_loader_tb -o /tmp/chimaera-program-loader.vvp $(SRC_DIR)/chimaera_program_loader.v program_loader_tb.v
 	vvp /tmp/chimaera-program-loader.vvp
+	iverilog -g2012 -s fault_loader_tb -o /tmp/chimaera-fault-loader.vvp $(SRC_DIR)/chimaera_program_loader.v fault_loader_tb.v
+	vvp /tmp/chimaera-fault-loader.vvp
 	iverilog -g2012 -s config_spi_tb -o /tmp/chimaera-config-spi.vvp $(SRC_DIR)/chimaera_config_spi.v config_spi_tb.v
 	vvp /tmp/chimaera-config-spi.vvp
 	iverilog -g2012 -s host_interface_tb -o /tmp/chimaera-host-interface.vvp $(SRC_DIR)/chimaera_config_spi.v $(SRC_DIR)/chimaera_program_loader.v $(SRC_DIR)/chimaera_host_interface.v host_interface_tb.v

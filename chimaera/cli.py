@@ -24,6 +24,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("source", type=Path)
     parser.add_argument("--clock-hz", type=int, required=True)
     parser.add_argument(
+        "--fault-seed",
+        type=lambda value: int(value, 0),
+        default=1,
+        help="non-zero 16-bit seed for the deterministic fault LFSR",
+    )
+    parser.add_argument(
         "--bind",
         action="append",
         type=_binding,
@@ -51,6 +57,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             arguments.source.read_text(encoding="utf-8"),
             clock_hz=arguments.clock_hz,
             bindings=bindings,
+            fault_seed=arguments.fault_seed,
         )
     except (OSError, ChimaeraError) as error:
         parser.exit(1, f"chimaera: error: {error}\n")

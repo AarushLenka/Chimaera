@@ -160,6 +160,14 @@ The fault stage must never be able to violate the open-drain safety property in
 guarantees apply to fault-modified output as to normal output. This is a hard
 constraint, not a corner case to handle later.
 
+The first Phase 6 implementation keeps this stage separate from the descriptor
+ABI. Each context has four 32-bit mutation records loaded through dedicated
+configuration opcodes, and a shared seeded 16-bit LFSR. The implemented slice
+faults a sampled shift-register value before successor-condition evaluation;
+open-drain output drive remains behind the existing low-only mask. Delay,
+protocol refusal/drop, pin hold, edge duplication, and late release still need
+their own records and focused live demos.
+
 ## 8. Contract/assertion checker
 
 A small comparator/window-logic block that watches the same synchronized signals

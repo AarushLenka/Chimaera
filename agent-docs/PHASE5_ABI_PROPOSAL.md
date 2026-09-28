@@ -41,8 +41,44 @@ The loader computes CRC-16-CCITT over those payload bytes from initial value
 
 The 32-bit command frame uses opcode `31:28`, context `27`, descriptor address
 `26:22`, word index `21:19`, reserved-zero bits `18:16`, and payload `15:0`.
-`BEGIN`, `WRITE_DESCRIPTOR`, `SET_CONTEXT`, `SET_PIN_MODES`, `COMMIT`, and
-`CONTROL` form the accepted initial command set.
+`BEGIN`, `WRITE_DESCRIPTOR`, `SET_CONTEXT`, `SET_PIN_MODES`, `SET_FAULT_SEED`,
+`WRITE_MUTATION`, `COMMIT`, and `CONTROL` form the accepted command set.
+
+## Phase 6 fault-record extension
+
+The descriptor remains exactly 128 bits. Fault configuration is stored in a
+separate four-record table per context so adding fault behavior does not add
+fields to the fixed-latency descriptor or change its CRC format.
+
+| Opcode | Name | Frame fields | Meaning |
+|---:|---|---|---|
+| `0x5` | `SET_FAULT_SEED` | payload | Load a non-zero 16-bit shared LFSR seed while a load is active. Context, address, and word must be zero. |
+| `0x6` | `WRITE_MUTATION` | context, address `0..3`, word `0..1`, payload | Write one 16-bit half of a 32-bit mutation record. |
+
+`BEGIN` resets the seed to `0x0001` and clears both four-record tables. A
+mutation record is laid out as follows:
+
+| Record bits | Meaning |
+|---:|---|
+| `31` | enable |
+| `30:28` | effect kind; `1` is `flip_sample` |
+| `27:24` | condition kind; `1` is sampled-shift equality |
+| `23:16` | post-sample shift value to compare |
+| `15:8` | XOR mask applied to the sampled shift register |
+| `7:0` | inclusive LFSR threshold |
+
+The first lowerable mutation form is `flip bits <mask> in <sampled_variable>`
+with a condition comparing that same sampled variable to an eight-bit literal.
+The sampled value is updated, faulted, and then used for the successor
+condition on the same fire. The shared 16-bit LFSR uses
+`x^16 + x^14 + x^13 + x^11 + 1`, advances once per fired context edge, and
+passes a record when `(lfsr[7:0] ^ lfsr[15:8]) <= threshold`. The compiler emits
+`0xff` for the deterministic source form; the threshold field leaves room for
+seeded probabilistic mutations without changing the loader ABI.
+
+Mutation records are separate from the descriptor CRC. Incomplete or malformed
+records remain disabled unless their enable/effect/condition fields form a
+valid record; descriptor ordering and CRC checks are unchanged.
 
 ## Measured generic synthesis cost
 
@@ -89,7 +125,9 @@ place-and-route can establish physical fit and 50 MHz timing.
 
 1. The compiler rejects programs above 32 descriptors after helper-state lowering.
 2. Protocol-only programs emit a `.loader.bin` stream and are marked
-   `chip_loadable: true`; mutation/contract programs remain host-only until Phase 6.
+   `chip_loadable: true`; the first Phase 6 `flip bits` mutation slice also emits
+   seed and mutation frames, while contracts and other mutation effects remain
+   host-only.
 3. The loader and runtime reject ordering, CRC, partial-record, entry-point, and
    successor-target errors before execution can resume.
 4. Two-context manifests expose the two-cycle rearm/inter-event-spacing assumption;

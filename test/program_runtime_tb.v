@@ -11,6 +11,9 @@ module program_runtime_tb;
   reg [7:0] sync_inputs = 8'h00;
   reg [7:0] rise_edges = 8'h00;
   reg [7:0] fall_edges = 8'h00;
+  reg [15:0] fault_seed = 16'h0001;
+  reg [127:0] mutation_config_0 = 128'h0;
+  reg [127:0] mutation_config_1 = 128'h0;
   wire [4:0] descriptor_address;
   reg [127:0] descriptor_memory [0:3];
   wire [127:0] descriptor_data = descriptor_memory[descriptor_address[1:0]];
@@ -33,6 +36,9 @@ module program_runtime_tb;
       .sync_inputs(sync_inputs),
       .rise_edges(rise_edges),
       .fall_edges(fall_edges),
+      .fault_seed(fault_seed),
+      .mutation_config_0(mutation_config_0),
+      .mutation_config_1(mutation_config_1),
       .drive_value_0(drive_value_0),
       .drive_enable_0(drive_enable_0),
       .drive_value_1(drive_value_1),

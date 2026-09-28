@@ -24,6 +24,9 @@ module chimaera_host_interface (
     output wire         load_in_progress,
     output wire [5:0]   loaded_descriptor_count,
     output wire [15:0]  computed_crc,
+    output wire [15:0]  fault_seed,
+    output wire [127:0] mutation_config_0,
+    output wire [127:0] mutation_config_1,
     output wire [31:0]  status_word
 );
 
@@ -70,9 +73,12 @@ module chimaera_host_interface (
       .program_valid          (program_valid),
       .execution_halted       (execution_halted),
       .load_error             (load_error),
-      .load_in_progress       (load_in_progress),
-      .loaded_descriptor_count(loaded_descriptor_count),
-      .computed_crc           (computed_crc)
+        .load_in_progress       (load_in_progress),
+        .loaded_descriptor_count(loaded_descriptor_count),
+        .computed_crc           (computed_crc),
+        .fault_seed             (fault_seed),
+        .mutation_config_0      (mutation_config_0),
+        .mutation_config_1      (mutation_config_1)
   );
 
 endmodule

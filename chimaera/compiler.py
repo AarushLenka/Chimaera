@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .ast import Action, Duration, Expr, Program, Protocol, State
-from .backend import PackedProgram, pack_program
+from .backend import PackedProgram, PackingError, pack_program
 from .errors import CompileError
 from .parser import parse
 
@@ -547,8 +547,8 @@ CHIP_LOADABLE = {chip_loadable!r}
 
 def replay():
     loaded = load_host_object(OBJECT)
-    if loaded.ir["mutations"]:
-        raise RuntimeError("generated mutation replay awaits Phase 6 mutation lowering")
+    if loaded.ir["mutations"] and not CHIP_LOADABLE:
+        raise RuntimeError("generated mutation replay awaits the hardware lowering for this effect")
     model = ChipReferenceModel(loaded)
     random_source = random.Random(SEED)
     trace = []
@@ -598,11 +598,14 @@ def compile_source(
     *,
     clock_hz: int,
     bindings: Mapping[str, str],
+    fault_seed: int = 1,
 ) -> Compilation:
     """Parse, statically check, and compile DSL source into a host object."""
 
     if clock_hz <= 0:
         raise CompileError("clock_hz must be greater than zero")
+    if not 1 <= fault_seed <= 0xFFFF:
+        raise CompileError("fault_seed must be a non-zero 16-bit value")
     program = parse(source)
     protocols_by_name: dict[str, Protocol] = {}
     for protocol in program.protocols:
@@ -647,14 +650,20 @@ def compile_source(
     ir: dict[str, Any] = {
         "format": "chimaera-host-ir-v1",
         "clock_hz": clock_hz,
+        "fault_seed": fault_seed,
         "fixed_event_to_output_latency_cycles": 1,
         "protocols": protocol_ir,
         "mutations": mutation_ir,
         "contracts": contract_ir,
     }
     packed_program = None
-    if not mutation_ir and not contract_ir:
-        packed_program = pack_program(ir)
+    if not contract_ir:
+        try:
+            packed_program = pack_program(ir)
+        except PackingError:
+            # Preserve a deterministic host object and diagnostics for DSL
+            # effects whose hardware record has not landed yet.
+            packed_program = None
     payload = json.dumps(ir, sort_keys=True, separators=(",", ":")).encode("utf-8")
     crc = binascii.crc32(payload) & 0xFFFFFFFF
     object_bytes = _OBJECT_MAGIC + struct.pack(">I", len(payload)) + payload + struct.pack(">I", crc)
@@ -681,6 +690,7 @@ def compile_source(
         "loader_crc16": (
             f"{packed_program.crc16:04x}" if packed_program is not None else None
         ),
+        "fault_seed": f"{fault_seed:04x}",
         "owned_pins": sorted(owner),
         "open_drain_pins": sorted(open_drain),
         "worst_case_mailbox_occupancy_bytes": 0,
@@ -703,7 +713,7 @@ def compile_source(
         },
         "outstanding": [
             "Add DSL timing requirements and discharge the inter-event spacing assumption",
-            "Lower mutations and contracts into the reference model and hardware records",
+            "Lower contracts into the reference model and hardware records",
             "Lower pattern events, seeded random_bits conditions, and bidirectional direction changes",
         ],
     }

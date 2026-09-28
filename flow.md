@@ -287,3 +287,17 @@ stream contained two descriptors with CRC16 `6886`. This closes the remaining
 human-authored Phase 5 criterion. The generated `.chobj`, loader, manifest,
 random-test, graph, and waveform files remain ignored build products. Phase 6
 now starts at the unresolved mutation/fault-injection hardware ABI decision.
+
+## 2026-09-28 — Implement the first Phase 6 fault slice
+
+The descriptor ABI stayed at 32 fixed 128-bit records. The loader now accepts a
+non-zero 16-bit fault seed and four separate 32-bit mutation records per
+context. The compiler lowers a sampled-variable equality mutation into a
+three-field record, the model applies the XOR after sampling, and the generic
+RTL execution engine applies the same fault before successor-condition
+evaluation. A targeted mutation trace matches the loaded runtime.
+
+Verification passed locally: 24 dependency-free host tests, six standalone
+Icarus benches including the new seed/mutation frame test, Verilator lint, and
+Yosys elaboration/synthesis preparation. The generic Yosys result is directional
+only; the hosted IHP workflow remains the physical gate after the eventual push.

@@ -13,6 +13,7 @@ from chimaera import (
     crc16_ccitt,
     load_host_object,
     parse,
+    run_runtime_replay,
 )
 
 
@@ -55,6 +56,35 @@ protocol right {
             goto idle
         }
     }
+}
+"""
+MUTATION_SOURCE = """
+protocol sampled_fault {
+    pin data input
+    pin response output
+    state idle {
+        on rise(data) {
+            sample data into sample
+        }
+        when sample == 0 -> corrupted
+        when sample == 1 -> intact
+    }
+    state corrupted {
+        on fall(data) {
+            drive response high
+            goto idle
+        }
+    }
+    state intact {
+        on fall(data) {
+            drive response low
+            goto idle
+        }
+    }
+}
+mutation flip_sample for sampled_fault {
+    when sample == 0x01
+    flip bits 0x01 in sample
 }
 """
 
@@ -249,6 +279,45 @@ protocol timed {
         self.assertEqual((helper >> 91) & 0x1F, 4)  # wrong completed byte -> ignore
         self.assertEqual((helper >> 96) & 0x1F, 1)  # incomplete byte -> address
 
+    def test_lowers_seeded_mutation_record_without_widening_descriptors(self) -> None:
+        compilation = compile_source(
+            MUTATION_SOURCE,
+            clock_hz=50_000_000,
+            fault_seed=0xACE1,
+            bindings={
+                "sampled_fault.data": "uio[0]",
+                "sampled_fault.response": "uio[1]",
+            },
+        )
+        packed = compilation.packed_program
+        self.assertIsNotNone(packed)
+        assert packed is not None
+        self.assertTrue(compilation.manifest["chip_loadable"])
+        self.assertEqual(packed.fault_seed, 0xACE1)
+        self.assertEqual(len(packed.descriptors), 4)
+        self.assertEqual(len(packed.descriptors[0].to_bytes(16, "big")), 16)
+        self.assertEqual(len(packed.loader_frames), 40)
+        record = packed.mutation_config[0] & 0xFFFFFFFF
+        self.assertEqual((record >> 16) & 0xFFFF, 0x9101)
+        self.assertEqual(record & 0xFFFF, 0x01FF)
+        self.assertEqual((packed.loader_frames[34] >> 28) & 0xF, 0x5)
+        self.assertEqual((packed.loader_frames[35] >> 28) & 0xF, 0x6)
+
+    def test_generated_randomized_mutation_replays_in_rtl(self) -> None:
+        compilation = compile_source(
+            MUTATION_SOURCE,
+            clock_hz=50_000_000,
+            fault_seed=0xACE1,
+            bindings={
+                "sampled_fault.data": "uio[0]",
+                "sampled_fault.response": "uio[1]",
+            },
+        )
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            exec(compilation.randomized_test, {"__name__": "__generated_test__"})
+        self.assertIn("PASS: 256 randomized cycles", output.getvalue())
+
     def test_rejects_open_drain_high_drive(self) -> None:
         source = """
 protocol unsafe {
@@ -343,6 +412,64 @@ class ReferenceModelTests(unittest.TestCase):
         self.assertTrue(timeout.from_timeout)
         self.assertEqual((timeout.drive_value, timeout.drive_enable), (0x00, 0x02))
         self.assertEqual(timeout.state_after, "idle")
+
+    def test_flip_bits_mutation_changes_sampled_variable(self) -> None:
+        compilation = compile_source(
+            MUTATION_SOURCE,
+            clock_hz=50_000_000,
+            fault_seed=0xACE1,
+            bindings={
+                "sampled_fault.data": "uio[0]",
+                "sampled_fault.response": "uio[1]",
+            },
+        )
+        model = ReferenceModel(compilation, "sampled_fault")
+        result = model.step(0x01)
+        self.assertTrue(result.fired)
+        self.assertEqual(result.variables["sample"], 0x00)
+        self.assertEqual(result.state_after, "corrupted")
+
+        # The same synchronized trace is accepted by the direct runtime
+        # bridge, proving the mutation record reaches the hardware model.
+        result = model.step(0x00)
+        self.assertTrue(result.fired)
+        self.assertEqual(result.drive_value, 0x02)
+
+    def test_mutation_trace_matches_loaded_runtime(self) -> None:
+        compilation = compile_source(
+            MUTATION_SOURCE,
+            clock_hz=50_000_000,
+            fault_seed=0xACE1,
+            bindings={
+                "sampled_fault.data": "uio[0]",
+                "sampled_fault.response": "uio[1]",
+            },
+        )
+        packed = compilation.packed_program
+        self.assertIsNotNone(packed)
+        assert packed is not None
+        model = ChipReferenceModel(compilation)
+        trace = []
+        previous = 0
+        for inputs in (0x00, 0x01, 0x00):
+            rising = (~previous & inputs) & 0xFF
+            falling = (previous & ~inputs) & 0xFF
+            result = model.step(inputs)
+            context = next(iter(result.contexts.values()))
+            trace.append(
+                (
+                    inputs,
+                    rising,
+                    falling,
+                    context.drive_value,
+                    context.drive_enable,
+                    0,
+                    0,
+                )
+            )
+            previous = inputs
+        output = run_runtime_replay(packed, trace)
+        self.assertIn("PASS: generated runtime replay", output)
 
     def test_two_context_chip_model_merges_disjoint_outputs(self) -> None:
         source = """
