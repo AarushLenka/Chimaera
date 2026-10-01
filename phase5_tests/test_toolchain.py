@@ -20,6 +20,7 @@ from chimaera import (
 EXAMPLE = Path(__file__).parents[1] / "examples" / "phase5" / "pulse_ack.chi"
 I2C_EXAMPLE = Path(__file__).parents[1] / "examples" / "phase5" / "i2c_ack.chi"
 LOADER_EXAMPLE = Path(__file__).parents[1] / "examples" / "phase5" / "loader_pulse.chi"
+PROXY_EXAMPLE = Path(__file__).parents[1] / "examples" / "phase6" / "wire_proxy.chi"
 BINDINGS = {
     "pulse_ack.request": "uio[0]",
     "pulse_ack.response": "uio[1]",
@@ -219,6 +220,50 @@ class CompilerTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             exec(compilation.randomized_test, {"__name__": "__generated_test__"})
         self.assertIn("PASS: 256 randomized cycles", output.getvalue())
+
+    def test_loaded_wire_proxy_forwards_port_a_edges_to_port_b(self) -> None:
+        compilation = compile_source(
+            PROXY_EXAMPLE.read_text(encoding="utf-8"),
+            clock_hz=50_000_000,
+            bindings={
+                "wire_proxy.side_a": "uio[0]",
+                "wire_proxy.side_b": "uio[4]",
+            },
+        )
+        self.assertTrue(compilation.manifest["chip_loadable"])
+        self.assertEqual(compilation.manifest["owned_pins"], ["uio[4]"])
+
+        model = ChipReferenceModel(compilation)
+        trace = []
+        previous = 0
+        observed = []
+        for inputs in (0x00, 0x01, 0x01, 0x00, 0x00):
+            rising = (~previous & inputs) & 0xFF
+            falling = (previous & ~inputs) & 0xFF
+            result = model.step(inputs)
+            context = result.contexts["wire_proxy"]
+            observed.append((context.drive_value, context.drive_enable))
+            trace.append(
+                (
+                    inputs,
+                    rising,
+                    falling,
+                    context.drive_value,
+                    context.drive_enable,
+                    0,
+                    0,
+                )
+            )
+            previous = inputs
+
+        self.assertEqual(
+            observed,
+            [(0x00, 0x00), (0x10, 0x10), (0x10, 0x10), (0x00, 0x10), (0x00, 0x10)],
+        )
+        self.assertIn(
+            "PASS: generated runtime replay",
+            run_runtime_replay(compilation.packed_program, trace),
+        )
 
     def test_resolves_physical_time_to_clock_cycles(self) -> None:
         source = """

@@ -396,3 +396,41 @@ rerun the hosted IHP gate.
 Yosys when all modules are checked, and disappear after the split. All
 standalone Icarus Phase 5 benches remain green.
 **Status:** implemented; hosted verification pending
+
+## 2026-10-02 — Accept hosted physical checkpoint
+
+**Context:** Hosted run 23 for commit `dca4ff7` completed the IHP GDS,
+gate-level simulation, Tiny Tapeout precheck, and viewer jobs successfully after
+the contract-monitor loop-counter repair.
+**Decision:** Treat the hosted run as a passing physical-flow checkpoint and
+continue Phase 6 demo work. Preserve the evidence boundary: the public run
+metadata confirms successful completion, but no numerical area or timing report
+was available in the checkout, so this entry does not claim a measured margin.
+**Alternatives considered:** Treating generic Yosys counts as physical area or
+assuming a timing margin from a green workflow would overstate the evidence.
+Waiting for numerical extraction before any software/demo work would not improve
+the already-passing physical gate.
+**Consequences:** The design has an independent hosted hardening/precheck
+checkpoint, while the Phase 6 "all five demos in simulation" criterion remains
+open. Future feature commits must stay focused because each push reruns the long
+hosted chain.
+**Status:** confirmed by hosted run; Phase 6 completion pending
+
+## 2026-10-02 — Use the existing ABI for the first proxy slice
+
+**Context:** The generic loaded descriptor path already binds logical DSL pins to
+physical `uio` pins and commits fixed-latency output actions, but no transducer
+demo exercised a binding from one logical port to another.
+**Decision:** Start transducer validation with a one-bit transparent A-to-B proxy
+program using the existing descriptor ABI: `uio[0]` is the input and `uio[4]`
+is the output. Preserve rise/fall behavior as two ordinary states and verify the
+compiled program through both the reference model and generated RTL replay.
+**Alternatives considered:** Adding a new mode opcode or a mailbox before
+proving basic forwarding would enlarge the ABI and physical design without
+isolating the first timing/ownership behavior. Calling the existing endpoint
+examples proxy evidence would not demonstrate cross-port forwarding.
+**Consequences:** The first proxy behavior is chip-loadable with no RTL or loader
+format change and has an explicit cycle-level test. Multi-bit protocol
+forwarding, rewrite policy, and the remaining translation/firewall semantics
+remain open.
+**Status:** implemented; Phase 6 completion pending

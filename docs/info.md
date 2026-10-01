@@ -10,8 +10,10 @@ You can also include images in this folder and reference them in the markdown. E
 ## Chimaera
 
 Chimaera is an event-driven programmable protocol transducer ASIC project. The
-functional design is specified in `agent-docs/SPEC.md`; the current Phase 4 build
-contains the UART baseline plus selectable I2C and SPI programs.
+functional design is specified in `agent-docs/SPEC.md`; the current build
+contains the UART/I2C/SPI fallback programs, a CRC-protected loaded descriptor
+runtime, seeded fault records, timing-contract monitoring, and the first loaded
+cross-port transparent-proxy example.
 
 ## How it works
 
@@ -19,14 +21,33 @@ The RTL contains two descriptor-driven reaction cells and one shared execution
 engine. Cell 0 receives and echoes UART 8-N-1 on `uio[0:1]`. Cell 1 is selected
 with `ui_in[1:0]`: `00` is an I2C target at address `0x42` on `uio[4:5]`, and
 `01` is an SPI mode-0 target on `uio[4:7]` that returns `0x3c`. I2C SDA/SCL
-outputs are structurally low-only. The last received byte appears on `uo_out`.
+outputs are structurally low-only. A valid host-loaded program takes ownership
+after `BEGIN`/commit/resume; its compiler-declared open-drain pins remain
+low-only, and contract violations trigger the fail-safe release path. The first
+cross-port example maps `uio[0]` to `uio[4]` with fixed edge latency. The last
+received byte appears on `uo_out` in the legacy fallback.
 
 ## How to test
 
 GitHub CI runs the cocotb tests in `test/test.py`. They cover UART receive/echo
 and false-start rejection, I2C ACK/NACK and data capture, and SPI response,
 capture, and CS-abort behavior. A dependency-free local smoke test is also
-available:
+available. The host compiler and loaded-runtime replay checks are run with:
+
+```sh
+python3 -m unittest discover -s phase5_tests -v
+```
+
+The first loaded transparent-proxy example can be compiled with:
+
+```sh
+python3 -m chimaera examples/phase6/wire_proxy.chi \
+  --clock-hz 50000000 \
+  --bind 'wire_proxy.side_a=uio[0]' \
+  --bind 'wire_proxy.side_b=uio[4]'
+```
+
+The dependency-free RTL fallback smoke test remains available:
 
 ```sh
 iverilog -g2012 -s smoke_phase4 -o /tmp/chimaera-smoke \

@@ -382,3 +382,39 @@ The loop indices are now separate. Local all-module Yosys reproduction no
 longer reports either constant-driver conflict, and `make -C test phase5`
 passes all standalone Icarus benches. Cocotb and the IHP PDK remain hosted
 validation dependencies.
+
+## 2026-10-02 — Hosted physical checkpoint passes
+
+Hausen reported that the push containing the contract-monitor loop-counter fix
+passed all GitHub Actions. The public run for commit `dca4ff7` confirms four GDS
+workflow jobs succeeded: IHP GDS hardening, gate-level simulation, Tiny Tapeout
+precheck, and viewer publication. The GDS job completed in 5h42m57s and the
+precheck in 3h12m33s. Numerical area and timing margins were not included in the
+checkout or public run summary, so this is recorded as a successful hosted
+physical-flow checkpoint, not as a quantified area/slack result.
+
+The next work remains Phase 6 completion: the current RTL/compiler evidence
+covers endpoint programs, seeded fault records, and timing contracts, but does
+not yet provide simulation evidence for the specified proxy, translation,
+rewrite, and firewall transducer modes or the full five-demo script. The next
+session should choose and implement one narrowly specified forwarding/rewrite
+slice, with its configuration path and simulation evidence, before calling Phase
+6 complete or moving to submission preparation.
+
+## 2026-10-02 — First loaded transparent-proxy slice
+
+After the hosted physical checkpoint, the next Phase 6 gap was narrowed to a
+forwarding behavior that does not require a new configuration ABI. Added
+`examples/phase6/wire_proxy.chi`, binding Port A `uio[0]` to Port B `uio[4]`.
+The loaded program mirrors a synchronized rise and fall through two fixed
+descriptor reactions. Its explicit trace is `00 -> 10 -> 10 -> 00 -> 00` for
+`drive_value/drive_enable`, where `0x10` is Port B high and enabled, followed by
+Port B low while remaining enabled.
+
+The reference-model result and generated Icarus runtime replay match. The local
+gate now reports 30 host tests, six standalone Phase 5 Icarus benches, Phase 4
+smoke coverage, clean Verilator lint, and the same 35,235-cell directional
+generic hierarchy. This is the first transducer evidence, not full Phase 6
+closure: protocol-level proxying, translation, SPI identity rewrite, firewall
+policy, and the complete five-demo simulation script remain to be built and
+tested.

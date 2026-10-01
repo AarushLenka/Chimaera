@@ -1,0 +1,20 @@
+// First Phase 6 forwarding slice: mirror a synchronized logic wire from
+// Port A to Port B with one descriptor reaction per edge.
+protocol wire_proxy {
+    pin side_a input
+    pin side_b output
+
+    state low {
+        on rise(side_a) {
+            drive side_b high
+            goto high
+        }
+    }
+
+    state high {
+        on fall(side_a) {
+            drive side_b low
+            goto low
+        }
+    }
+}
