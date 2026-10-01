@@ -1,0 +1,20 @@
+// Minimal loaded UART edge endpoint used by the Phase 6 demo suite.
+protocol basic_uart {
+    pin rx input
+    pin tx output
+
+    state idle {
+        on rise(rx) {
+            drive tx low
+            goto stop
+        }
+    }
+
+    state stop {
+        on fall(rx) {
+            drive tx high
+            goto idle
+        }
+        within 8 cycles else -> idle
+    }
+}

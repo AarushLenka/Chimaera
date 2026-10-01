@@ -1,0 +1,43 @@
+// SPI command firewall: permit read opcode 0x03 and release MISO for every
+// other command, including write/erase opcodes.
+protocol spi_firewall {
+    pin cs input
+    pin sclk input
+    pin mosi input
+    pin miso output
+
+    state idle {
+        on fall(cs) {
+            reset command
+            reset bits
+            goto command
+        }
+    }
+
+    state command {
+        on rise(sclk) {
+            sample mosi into command
+            count bits
+        }
+        when bits == 8 && command == 0x03 -> allowed
+        when bits == 8 -> blocked
+    }
+
+    state allowed {
+        on fall(sclk) {
+            drive miso release
+            goto wait_cs
+        }
+    }
+
+    state blocked {
+        on fall(sclk) {
+            drive miso release
+            goto wait_cs
+        }
+    }
+
+    state wait_cs {
+        on rise(cs) -> idle
+    }
+}

@@ -1,0 +1,45 @@
+// Minimal loaded SPI mode-0 endpoint used by the Phase 6 demo suite.
+protocol basic_spi {
+    pin cs input
+    pin sclk input
+    pin miso output
+
+    state idle {
+        on fall(cs) -> bit0
+    }
+
+    state bit0 {
+        on rise(sclk) {
+            drive miso high
+            goto bit1
+        }
+    }
+
+    state bit1 {
+        on rise(sclk) {
+            drive miso low
+            goto bit2
+        }
+    }
+
+    state bit2 {
+        on rise(sclk) {
+            drive miso high
+            goto bit3
+        }
+    }
+
+    state bit3 {
+        on rise(sclk) {
+            drive miso low
+            goto finish
+        }
+    }
+
+    state finish {
+        on rise(cs) {
+            drive miso release
+            goto idle
+        }
+    }
+}

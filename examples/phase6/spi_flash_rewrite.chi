@@ -1,0 +1,92 @@
+// SPI flash identity rewrite: recognize JEDEC-ID (0x9f), emit 0xef, and
+// release MISO for all other commands so a real flash can answer normally.
+protocol spi_flash_rewrite {
+    pin cs input
+    pin sclk input
+    pin mosi input
+    pin miso output
+
+    state idle {
+        on fall(cs) {
+            reset command
+            reset bits
+            goto command
+        }
+    }
+
+    state command {
+        on rise(sclk) {
+            sample mosi into command
+            count bits
+        }
+        when bits == 8 && command == 0x9f -> id0
+        when bits == 8 -> passthrough
+    }
+
+    state id0 {
+        on fall(sclk) {
+            drive miso high
+            goto id1
+        }
+    }
+    state id1 {
+        on fall(sclk) {
+            drive miso high
+            goto id2
+        }
+    }
+    state id2 {
+        on fall(sclk) {
+            drive miso high
+            goto id3
+        }
+    }
+    state id3 {
+        on fall(sclk) {
+            drive miso low
+            goto id4
+        }
+    }
+    state id4 {
+        on fall(sclk) {
+            drive miso high
+            goto id5
+        }
+    }
+    state id5 {
+        on fall(sclk) {
+            drive miso high
+            goto id6
+        }
+    }
+    state id6 {
+        on fall(sclk) {
+            drive miso high
+            goto id7
+        }
+    }
+    state id7 {
+        on fall(sclk) {
+            drive miso high
+            goto finish
+        }
+    }
+
+    state finish {
+        on rise(cs) {
+            drive miso release
+            goto idle
+        }
+    }
+
+    state passthrough {
+        on fall(sclk) {
+            drive miso release
+            goto wait_cs
+        }
+    }
+
+    state wait_cs {
+        on rise(cs) -> idle
+    }
+}

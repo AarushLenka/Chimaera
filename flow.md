@@ -418,3 +418,26 @@ generic hierarchy. This is the first transducer evidence, not full Phase 6
 closure: protocol-level proxying, translation, SPI identity rewrite, firewall
 policy, and the complete five-demo simulation script remain to be built and
 tested.
+
+## 2026-10-02 — Five-demo Phase 6 simulation gate passes
+
+Added loadable DSL examples for a basic UART/SPI endpoint pair, an I2C sensor
+slice, SPI flash identity rewrite, SPI firewall policy, and one-bit clock-domain
+translation. The sensor captures a second byte after address `0x84`; its two
+seed-independent mutations hold SCL low for two cycles and delay the ACK action
+by two cycles. The rewrite recognizes `0x9f` and emits the patched byte `0xef`,
+while non-ID commands release MISO. The firewall classifies `0x03` as allowed
+and releases MISO for writes/unknown commands.
+
+`python3 scripts/phase6_demos.py` now runs five end-to-end scenarios: basic
+UART/SPI/I2C compliance, I2C sensor impersonation, SPI identity rewrite,
+same-seed fault replay, and the new wire protocol with translation/firewall
+checks. Each scenario compiles through the host proof checks, runs the reference
+model, and compares its synchronized trace with generated Icarus RTL replay.
+The runner passed all five scenarios. `scripts/local-verify.sh` invokes it before
+the standalone RTL benches, so the complete Phase 6 simulation gate is now part
+of the normal local verification path.
+
+This closes the Phase 6 simulation criterion. It does not claim silicon behavior,
+physical area, or timing margin; the next step is a focused commit followed by
+the hosted IHP GDS/gate-level/precheck/viewer workflow.

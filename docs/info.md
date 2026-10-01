@@ -12,8 +12,8 @@ You can also include images in this folder and reference them in the markdown. E
 Chimaera is an event-driven programmable protocol transducer ASIC project. The
 functional design is specified in `agent-docs/SPEC.md`; the current build
 contains the UART/I2C/SPI fallback programs, a CRC-protected loaded descriptor
-runtime, seeded fault records, timing-contract monitoring, and the first loaded
-cross-port transparent-proxy example.
+runtime, seeded fault records, timing-contract monitoring, and loadable
+cross-port proxy, translation, rewrite, and firewall examples.
 
 ## How it works
 
@@ -38,7 +38,18 @@ available. The host compiler and loaded-runtime replay checks are run with:
 python3 -m unittest discover -s phase5_tests -v
 ```
 
-The first loaded transparent-proxy example can be compiled with:
+The complete Phase 6 simulation evidence can be run with:
+
+```sh
+python3 scripts/phase6_demos.py
+```
+
+It covers the three basic endpoints, an I2C sensor slice with writable-byte
+capture/clock stretch/response delay, an SPI JEDEC identity rewrite, seeded
+fault replay, a new wire protocol, bit translation, and an SPI firewall. Every
+case is compared against the reference model and generated Icarus runtime.
+
+The first loaded transparent-proxy example can also be compiled directly with:
 
 ```sh
 python3 -m chimaera examples/phase6/wire_proxy.chi \

@@ -7,6 +7,9 @@ cd "$repo_dir"
 echo "== host compiler tests =="
 python3 -m unittest discover -s phase5_tests -v
 
+echo "== Phase 6 demo simulations =="
+python3 scripts/phase6_demos.py
+
 echo "== standalone RTL tests =="
 make -C test phase5
 

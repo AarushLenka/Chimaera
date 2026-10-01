@@ -1,0 +1,41 @@
+// A loaded one-bit translator: sample Device A on its clock and emit the
+// normalized value on Device B's clock. The two output states make the
+// polarity/bit-order decision explicit and fixed-latency.
+protocol bit_order_translate {
+    pin source input
+    pin source_clock input
+    pin destination_clock input
+    pin destination output
+
+    state sample_a {
+        on rise(source_clock) {
+            sample source into bit
+            goto wait_b
+        }
+    }
+
+    state wait_b {
+        on rise(destination_clock) -> emit
+    }
+
+    state emit {
+        on fall(destination_clock) {
+        }
+        when bit == 1 -> emit_one
+        when bit == 0 -> emit_zero
+    }
+
+    state emit_one {
+        on fall(destination_clock) {
+            drive destination high
+            goto sample_a
+        }
+    }
+
+    state emit_zero {
+        on fall(destination_clock) {
+            drive destination low
+            goto sample_a
+        }
+    }
+}

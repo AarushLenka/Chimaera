@@ -434,3 +434,26 @@ format change and has an explicit cycle-level test. Multi-bit protocol
 forwarding, rewrite policy, and the remaining translation/firewall semantics
 remain open.
 **Status:** implemented; Phase 6 completion pending
+
+## 2026-10-02 — Complete the Phase 6 simulation gate with finite transducer slices
+
+**Context:** The existing descriptor ABI can express fixed-latency edge actions,
+sampled-byte comparisons, output release, and the already-implemented seeded
+mutation/contract records. The five SPEC demos needed concrete simulation
+evidence without adding a new mode opcode or widening the loader format.
+**Decision:** Implement the remaining demo behaviors as small loadable DSL
+programs: I2C address/register capture with stretch and delay mutations, SPI
+JEDEC identity rewrite, SPI read-only firewall policy, and a one-bit clock-domain
+translation slice. Add a single `scripts/phase6_demos.py` runner that compiles
+each program, replays synchronized inputs in the reference model, and checks
+the generated RTL runtime cycle by cycle. Keep the existing wire proxy as the
+new-protocol demo.
+**Alternatives considered:** Adding a general transducer-mode opcode or a
+mailbox before the finite-state behavior is proven would enlarge the physical
+design and make failures harder to localize. Calling host-only assertions
+without generated RTL replay would not meet the simulation evidence requirement.
+**Consequences:** All five demo scenarios and proxy/translation/rewrite/firewall
+slices are now deterministic, chip-loadable simulation artifacts. The DSL still
+does not claim arbitrary packet buffering or dynamic register storage; those
+remain outside this finite Phase 6 slice.
+**Status:** implemented; hosted physical validation pending
