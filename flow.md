@@ -469,3 +469,32 @@ do not identify a failing metric. The next session must obtain authenticated
 access to `GDS_logs` (or equivalent numeric reports), then either freeze/package
 the RTL if all limits are demonstrated or make one targeted physical fix and
 rerun the hosted flow.
+
+## 2026-10-03 — Extract final GDS reports and identify the physical blocker
+
+The locally available `GDS_logs` tree contains the final LibreLane metrics for
+the same RTL commit `8e278b014e82798a49bd886998278e25b77a265c` and hosted run 24
+(`36910900661`). Final physical numbers are: die bbox `0.0 0.0 1289.28 710.64`
+µm, die area `916214 µm²` (`0.916214 mm²`), core/instance area `902417 µm²`
+(`0.902417 mm²`), standard-cell area `700603 µm²`, and instance utilization
+`0.776363` (`77.6363%`). The die rectangle matches the declared `6x4` / 24-tile
+allocation, so the tile-envelope gate passes.
+
+The final 20 ns clock analysis passes hold (`WNS=0`, `TNS=0`) but fails setup at
+the slow `nom_slow_1p08V_125C` corner: setup WNS `-7.9532009896 ns`, setup TNS
+`-1122.8959556 ns`, and 255 setup violations. Fast and typical setup WNS/TNS
+are zero in the final metrics, but the slow-corner failure governs the 50 MHz
+gate. Magic DRC reports `0` errors and the final metrics report route DRC `0`;
+netgen reports `Final result: Circuits match uniquely` and the LVS mismatch
+counters are all zero. However, the manufacturability report fails antenna
+checking with `3` pin violations and `3` net violations, so signoff is not yet
+clean despite DRC/LVS passing.
+
+The same-SHA clean local regression and hosted cocotb regression were already
+verified before this report extraction. Because the physical timing and antenna
+gates fail, RTL remains unfrozen and no submission package is declared ready.
+The flow emitted `GPL-0302` (`Target density 0.6000 is too low for the available
+free area`), so the next hosted attempt uses the targeted P&R-only change
+`PL_TARGET_DENSITY_PCT: 60 -> 70` in both hosted and local configurations. The
+20 ns clock target and RTL are unchanged; the next run must re-check timing,
+antenna, DRC/LVS, utilization, and the 24-tile envelope.

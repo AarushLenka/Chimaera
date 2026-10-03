@@ -489,3 +489,33 @@ next required action; only then can the project choose freeze/package versus a
 targeted physical fix and hosted rerun.
 
 **Status:** hosted flow passed; physical closure pending report extraction
+
+## 2026-10-03 — Hold RTL freeze on extracted timing and antenna failures
+
+**Context:** The extracted final reports for hosted run 24 and commit
+`8e278b014e82798a49bd886998278e25b77a265c` provide the missing physical
+numbers. The die is `916214 µm²` (`0.916214 mm²`) with `902417 µm²` core area
+and `77.6363%` instance utilization; its `1289.28 × 710.64 µm` envelope matches
+the declared `6x4 = 24` tiles. Magic DRC is zero, route DRC is zero, and netgen
+LVS matches uniquely with zero mismatch counters. The final slow-corner setup
+WNS is `-7.9532009896 ns` and setup TNS is `-1122.8959556 ns` at the 20 ns
+target. The manufacturability report also records 3 antenna pin and 3 antenna
+net violations.
+
+**Decision:** Do not freeze RTL or prepare the submission package. Apply one
+targeted P&R-only change: raise `PL_TARGET_DENSITY_PCT` from 60 to 70, retaining
+the 20 ns clock, die size, tile allocation, and all RTL. Rerun the hosted flow
+and judge closure using the worst-corner setup slack plus antenna, DRC, LVS,
+utilization, and 24-tile results.
+
+**Alternatives considered:** Relaxing `CLOCK_PERIOD` would hide the 50 MHz
+requirement. Editing RTL before trying the flow's explicit `GPL-0302` density
+warning would not be a targeted physical fix. Treating zero Magic DRC/LVS as
+full manufacturability closure would ignore the reported antenna failures.
+
+**Consequences:** The current physical result is recorded as a quantified
+non-closure. The hosted rerun must be performed from the new configuration
+commit; only a run with non-negative worst-corner setup slack and zero antenna,
+DRC, and LVS failures can authorize RTL freeze and package preparation.
+
+**Status:** targeted P&R adjustment prepared; hosted rerun pending
