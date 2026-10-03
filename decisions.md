@@ -457,3 +457,35 @@ slices are now deterministic, chip-loadable simulation artifacts. The DSL still
 does not claim arbitrary packet buffering or dynamic register storage; those
 remain outside this finite Phase 6 slice.
 **Status:** implemented; hosted physical validation pending
+
+## 2026-10-03 — Quantify the current hosted physical-flow boundary
+
+**Context:** Physical-flow closure requires actual routed area, utilization,
+timing slack, DRC/LVS evidence, and confirmation against the 24-tile budget. The
+current commit `8e278b014e82798a49bd886998278e25b77a265c` has a successful hosted
+GDS run 24 (`36910900661`), but GitHub's public artifact API returns HTTP 401 for
+the run's protected report bundles.
+
+**Decision:** Record the evidence that is available without inventing missing
+metrics. The current hosted GDS, precheck, gate-level, and viewer jobs all passed.
+The viewer-deployed `tt_um_chimaera` OAS top cell measures `1289.28 × 710.64 µm`,
+with an envelope area of `916213.9392 µm²` (`0.916213939 mm²`), and the checked-in
+request is `6x4 = 24` tiles. Routed cell area, utilization, WNS/TNS slack, and
+standalone DRC/LVS results remain **unavailable**, so the 50 MHz / 20 ns and
+physical-fit gates remain open. The checked-in configuration explicitly sets
+`RUN_KLAYOUT_DRC=0` and `RUN_KLAYOUT_XOR=0`, so hosted precheck success is not
+relabelled as DRC/LVS closure.
+
+**Alternatives considered:** Treating a green workflow as proof of timing margin
+or treating the generic `35235`-cell Yosys count as physical area would violate
+the project's generic-versus-IHP evidence boundary. Making an RTL or P&R change
+without a failing physical metric would be speculative and could invalidate the
+current green checkpoint.
+
+**Consequences:** The exact-commit local gate and same-SHA hosted cocotb regression
+are clean, but RTL is not frozen and the submission package is not yet declared
+ready. Authenticated access to `GDS_logs` or equivalent numeric reports is the
+next required action; only then can the project choose freeze/package versus a
+targeted physical fix and hosted rerun.
+
+**Status:** hosted flow passed; physical closure pending report extraction

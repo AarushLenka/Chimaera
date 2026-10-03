@@ -441,3 +441,31 @@ of the normal local verification path.
 This closes the Phase 6 simulation criterion. It does not claim silicon behavior,
 physical area, or timing margin; the next step is a focused commit followed by
 the hosted IHP GDS/gate-level/precheck/viewer workflow.
+
+## 2026-10-03 — Current-commit physical-flow extraction and clean regression
+
+The hosted IHP workflow for commit `8e278b014e82798a49bd886998278e25b77a265c`
+completed successfully as run 24 (`36910900661`). Its GDS hardening, Tiny Tapeout
+precheck, gate-level test, and viewer jobs all passed. The public viewer deployment
+also exposes the current `tt_um_chimaera` OAS: the top-cell envelope is
+`1289.28 × 710.64 µm`, or `916213.9392 µm²` (`0.916213939 mm²`), consistent with
+the configured `6x4` / 24-tile submission rectangle. This is die-envelope and
+tile-allocation evidence, not routed-cell utilization.
+
+The public run metadata does not expose the numeric contents of the protected
+`GDS_logs` artifact. Therefore routed area, utilization, WNS/TNS slack, and
+standalone DRC/LVS results could not be extracted. The repository configuration
+also has `RUN_KLAYOUT_DRC=0` and `RUN_KLAYOUT_XOR=0`; a green precheck is not being
+represented as a DRC/LVS report. The 50 MHz / 20 ns target is configured and the
+hosted build is green, but timing closure cannot be claimed without the actual
+slack report.
+
+The exact-commit local regression passed: 30 host tests, all five Phase 6 demos,
+six standalone Icarus benches, the Phase 4 smoke simulation, Verilator lint, and
+generic Yosys elaboration/synthesis (`35235` hierarchy cells, directional only).
+The same SHA's hosted test run 23 also passed its cocotb-backed `Run tests` step
+and JUnit summary. No RTL or P&R fix was made because the missing physical reports
+do not identify a failing metric. The next session must obtain authenticated
+access to `GDS_logs` (or equivalent numeric reports), then either freeze/package
+the RTL if all limits are demonstrated or make one targeted physical fix and
+rerun the hosted flow.
