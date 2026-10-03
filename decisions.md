@@ -519,3 +519,17 @@ commit; only a run with non-negative worst-corner setup slack and zero antenna,
 DRC, and LVS failures can authorize RTL freeze and package preparation.
 
 **Status:** targeted P&R adjustment prepared; hosted rerun pending
+
+## 2026-10-03 — Require hosted rerun from the adjusted configuration commit
+
+**Context:** Commit `8cab614e857874c35bad333fccd39b23a0effe52` contains only the
+targeted placement-density adjustment and the physical evidence records. Its
+clean local regression passed all existing host, demo, RTL, lint, and generic
+Yosys gates; RTL source is unchanged.
+
+**Decision:** Use `8cab614` as the next hosted-flow baseline. Do not combine any
+RTL or clock-period changes with the P&R experiment. Replace the old physical
+metrics only after the hosted GDS, precheck, gate-level, timing, antenna, DRC,
+LVS, and tile-fit reports are extracted from this exact commit.
+
+**Status:** local regression passed; hosted rerun pending

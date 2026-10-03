@@ -498,3 +498,13 @@ free area`), so the next hosted attempt uses the targeted P&R-only change
 `PL_TARGET_DENSITY_PCT: 60 -> 70` in both hosted and local configurations. The
 20 ns clock target and RTL are unchanged; the next run must re-check timing,
 antenna, DRC/LVS, utilization, and the 24-tile envelope.
+
+## 2026-10-03 — Clean regression after targeted P&R adjustment
+
+Commit `8cab614e857874c35bad333fccd39b23a0effe52` changes only the hosted/local
+placement target density from 60 to 70 plus the evidence logs. The clean local
+regression passed at this commit: 30 host tests, all five Phase 6 demos, six
+standalone RTL benches, Phase 4 smoke simulation, Verilator lint, and generic
+Yosys elaboration. No RTL source changed. The hosted GDS/precheck/gate-level
+flow still needs to be rerun from this commit before any physical conclusion is
+updated.
