@@ -534,3 +534,28 @@ route DRC is zero in final metrics, and netgen reports `Final result: Circuits
 match uniquely` with zero LVS mismatches. The hosted workflows and the clean
 same-commit regression are green, but physical timing is still open; RTL is
 not frozen and no submission package is ready.
+
+## 2026-10-04 — Replace the input broadcast with preserved consumer banks
+
+The extracted timing diagnosis identified the remaining setup blocker as a
+fanout topology rather than a hold-repair margin: `sync_value[3]` reaches the
+loaded runtime action path at `25.926 ns` against a `20.641 ns` requirement.
+The placement-only hold-margin experiment was therefore restored to
+`PL_RESIZER_HOLD_SLACK_MARGIN=0.10`, and the RTL input frontend was changed to
+feed three independent consumer banks. Loaded runtime, legacy reaction cells,
+and the execution engine each receive a complete two-flop synchronizer plus
+bank-local edge history, preserving the previous synchronized-event latency.
+
+The first implementation duplicated registers in one module, but the initial
+Yosys netlist check caught equivalent-register merging back into one broadcast.
+That was corrected with explicit `chimaera_input_bank` instances and preserved
+hierarchy attributes. An explicit flattened Yosys run then retained the three
+instances `input_frontend.legacy_bank`, `input_frontend.loaded_bank`, and
+`input_frontend.execution_bank`. The focused bank-latency test and full local
+verification passed: 30 host tests, five Phase 6 demos, standalone RTL benches,
+Phase 4 smoke, Verilator lint, and generic synthesis (`35347` hierarchy cells).
+
+This is a new RTL checkpoint, not physical closure. The retained GDS reports are
+from the prior commit, so the new fanout fix still needs a hosted GDS/precheck/
+gate-level rerun and exact-commit timing, area, utilization, DRC/LVS, antenna,
+and tile-fit extraction.

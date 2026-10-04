@@ -12,6 +12,8 @@ PROJECT_SOURCES = chimaera_input_frontend.v chimaera_uart_program.v chimaera_i2c
 
 .PHONY: phase5
 phase5:
+	iverilog -g2012 -s input_frontend_tb -o /tmp/chimaera-input-frontend.vvp $(SRC_DIR)/chimaera_input_frontend.v input_frontend_tb.v
+	vvp /tmp/chimaera-input-frontend.vvp
 	iverilog -g2012 -s program_loader_tb -o /tmp/chimaera-program-loader.vvp $(SRC_DIR)/chimaera_program_loader.v program_loader_tb.v
 	vvp /tmp/chimaera-program-loader.vvp
 	iverilog -g2012 -s fault_loader_tb -o /tmp/chimaera-fault-loader.vvp $(SRC_DIR)/chimaera_program_loader.v fault_loader_tb.v

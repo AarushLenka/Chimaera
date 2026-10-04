@@ -560,3 +560,34 @@ current status, while the old artifact remains useful as a before/after
 baseline. The design is physically cleaner but still not submission-ready.
 
 **Status:** hosted rerun verified; timing closure pending
+
+## 2026-10-04 — Replicate synchronized input banks for setup fanout
+
+**Context:** The latest slow-corner path is the synchronized input bit feeding
+the loaded runtime action logic: `input_frontend.sync_value[3]` reaches
+`loaded_runtime.reaction_cell_0.action_value[0]` at `25.926 ns` against a
+`20.641 ns` requirement, for `-5.285 ns` WNS. This is a setup/fanout problem;
+another hold-margin adjustment does not remove the broadcast topology.
+
+**Decision:** Restore `PL_RESIZER_HOLD_SLACK_MARGIN` to `0.10` and split the
+input frontend into three named, hierarchy-preserved consumer banks: loaded
+runtime, legacy reaction path, and execution engine. Each bank retains its own
+two-flop synchronizer and previous synchronized sample, and locally derives
+`sync_inputs`, `rise_edges`, and `fall_edges`. Preserve the existing logical
+latency and signal behavior; do not add a downstream registered snapshot.
+
+**Alternatives considered:** Keeping the `0.05` hold margin would continue to
+target the wrong path. A downstream snapshot would be simpler but would add an
+event-to-action cycle and require ABI/spec/regression changes. Plain duplicated
+register declarations were rejected after Yosys merged them; explicit bank
+instances with `keep_hierarchy`/`dont_touch` preserve the intended topology.
+
+**Consequences:** The frontend now contains three physical synchronizer banks,
+adding 48 synchronizer/history flops versus the former single bank. The local
+generic Yosys hierarchy count is `35347`; this is directional only and is not a
+physical area or timing result. The exact flattened synthesized netlist retained
+three `input_frontend.{legacy,loaded,execution}_bank` instances. A hosted GDS
+rerun is still required to measure the new slow-corner timing, area, utilization,
+and signoff reports.
+
+**Status:** confirmed by Hausen; local RTL gate passed; hosted physical rerun pending

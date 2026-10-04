@@ -28,9 +28,15 @@ module tt_um_chimaera (
   // A BEGIN frame switches pin ownership to the Phase 5 loaded-program path.
   wire [1:0] protocol_select = ui_in[1:0];
 
-  wire [7:0] synchronized_inputs;
-  wire [7:0] rising_edges;
-  wire [7:0] falling_edges;
+  wire [7:0] legacy_sync_inputs;
+  wire [7:0] legacy_rise_edges;
+  wire [7:0] legacy_fall_edges;
+  wire [7:0] loaded_sync_inputs;
+  wire [7:0] loaded_rise_edges;
+  wire [7:0] loaded_fall_edges;
+  wire [7:0] execution_sync_inputs;
+  wire [7:0] execution_rise_edges;
+  wire [7:0] execution_fall_edges;
 
   wire                   cell_fire_0;
   wire                   cell_fire_from_timeout_0;
@@ -129,12 +135,18 @@ module tt_um_chimaera (
   end
 
   chimaera_input_frontend input_frontend (
-      .clk          (clk),
-      .rst_n        (rst_n),
-      .async_inputs (uio_in),
-      .sync_inputs  (synchronized_inputs),
-      .rise_edges   (rising_edges),
-      .fall_edges   (falling_edges)
+      .clk                   (clk),
+      .rst_n                 (rst_n),
+      .async_inputs          (uio_in),
+      .sync_inputs           (legacy_sync_inputs),
+      .rise_edges            (legacy_rise_edges),
+      .fall_edges            (legacy_fall_edges),
+      .loaded_sync_inputs    (loaded_sync_inputs),
+      .loaded_rise_edges     (loaded_rise_edges),
+      .loaded_fall_edges     (loaded_fall_edges),
+      .execution_sync_inputs (execution_sync_inputs),
+      .execution_rise_edges  (execution_rise_edges),
+      .execution_fall_edges  (execution_fall_edges)
   );
 
   chimaera_host_interface host_interface (
@@ -176,9 +188,9 @@ module tt_um_chimaera (
       .context_entry_1     (loaded_context_entry_1),
       .descriptor_address  (loaded_descriptor_address),
       .descriptor_data     (loaded_descriptor_data),
-      .sync_inputs         (synchronized_inputs),
-      .rise_edges          (rising_edges),
-      .fall_edges          (falling_edges),
+      .sync_inputs         (loaded_sync_inputs),
+      .rise_edges          (loaded_rise_edges),
+      .fall_edges          (loaded_fall_edges),
       .fault_seed          (loaded_fault_seed),
       .mutation_config_0   (loaded_mutation_config_0),
       .mutation_config_1   (loaded_mutation_config_1),
@@ -249,9 +261,9 @@ module tt_um_chimaera (
   ) reaction_cell_0 (
       .clk               (clk),
       .rst_n             (rst_n),
-      .sync_inputs       (synchronized_inputs),
-      .rise_edges        (rising_edges),
-      .fall_edges        (falling_edges),
+      .sync_inputs       (legacy_sync_inputs),
+      .rise_edges        (legacy_rise_edges),
+      .fall_edges        (legacy_fall_edges),
       .load              (load_cell_0),
       .load_state        (descriptor_state_0),
       .load_event_kind   (program_event_kind_0),
@@ -288,9 +300,9 @@ module tt_um_chimaera (
   ) reaction_cell_1 (
       .clk               (clk),
       .rst_n             (rst_n),
-      .sync_inputs       (synchronized_inputs),
-      .rise_edges        (rising_edges),
-      .fall_edges        (falling_edges),
+      .sync_inputs       (legacy_sync_inputs),
+      .rise_edges        (legacy_rise_edges),
+      .fall_edges        (legacy_fall_edges),
       .load              (load_cell_1),
       .load_state        (descriptor_state_1),
       .load_event_kind   (program_event_kind_1),
@@ -334,7 +346,7 @@ module tt_um_chimaera (
       .fire_1          (cell_fire_1),
       .current_state_1 (cell_state_1),
       .fire_sample_1   (cell_fire_sample_1),
-      .sync_inputs     (synchronized_inputs),
+      .sync_inputs     (execution_sync_inputs),
       .protocol_select (protocol_select),
       .next_state_0    (next_state_0),
       .next_tx_bit_0   (next_tx_bit_0),
@@ -353,7 +365,7 @@ module tt_um_chimaera (
       (protocol_select == PROTOCOL_I2C) ?
       (cell_drive_enable_1 & ~cell1_pin_value) : cell_drive_enable_1;
   wire [7:0] spi_abort_release =
-      (protocol_select == PROTOCOL_SPI && synchronized_inputs[7]) ? 8'h40 : 8'h00;
+      (protocol_select == PROTOCOL_SPI && execution_sync_inputs[7]) ? 8'h40 : 8'h00;
 
   wire [7:0] legacy_uio_out = cell_drive_value_0 | cell1_pin_value;
   wire [7:0] legacy_uio_oe =
@@ -373,6 +385,10 @@ module tt_um_chimaera (
 
   wire _unused = &{ena, ui_in[7:5], cell_fire_from_timeout_0,
                    cell_fire_from_timeout_1, received_strobe,
+                   // The execution bank exposes aligned edge vectors for
+                   // consumers that need them; the legacy execution engine
+                   // currently samples its synchronized level directly.
+                   execution_rise_edges, execution_fall_edges,
                    loaded_load_error, loaded_descriptor_count, loaded_crc,
                    loaded_fault_seed, loaded_mutation_config_0,
                    loaded_mutation_config_1, loaded_contract_config_0,
