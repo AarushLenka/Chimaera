@@ -508,3 +508,29 @@ standalone RTL benches, Phase 4 smoke simulation, Verilator lint, and generic
 Yosys elaboration. No RTL source changed. The hosted GDS/precheck/gate-level
 flow still needs to be rerun from this commit before any physical conclusion is
 updated.
+
+## 2026-10-04 — Latest hosted GDS reports after density adjustment
+
+The retained `GDS_logs_latest` artifact is for commit
+`c1e860c1498d267341c8efe7e9fb16e985b06941` and hosted workflow
+`37123217138`. The 20 ns clock and `PL_TARGET_DENSITY_PCT=70` are present in
+the resolved flow configuration. The final physical metrics are: die bbox
+`0.0 0.0 1289.28 710.64` µm, die area `916214` µm² (`0.916214` mm²),
+core/instance area `902417` µm² (`0.902417` mm²), standard-cell area
+`699614` µm², and instance utilization `0.775267` (`77.5267%`). The die
+envelope remains the configured `6x4` / 24-tile allocation, so the tile-fit
+gate passes.
+
+At the slow `nom_slow_1p08V_125C` corner, setup WNS is `-5.1042833627` ns,
+setup TNS is `-446.3203550849` ns, and there are `252` setup violations.
+Hold WNS/TNS are zero; fast and typical setup WNS/TNS are zero. Relative to
+the prior density-60 run, setup WNS improved by `2.8489176269` ns and setup
+TNS improved by `676.5756005` ns, but the worst-corner setup requirement is
+still not met for 50 MHz / 20 ns.
+
+The manufacturability report now passes antenna, LVS, and DRC. The antenna
+reports contain zero net and pin violations, Magic DRC reports zero errors,
+route DRC is zero in final metrics, and netgen reports `Final result: Circuits
+match uniquely` with zero LVS mismatches. The hosted workflows and the clean
+same-commit regression are green, but physical timing is still open; RTL is
+not frozen and no submission package is ready.

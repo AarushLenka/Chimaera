@@ -533,3 +533,30 @@ metrics only after the hosted GDS, precheck, gate-level, timing, antenna, DRC,
 LVS, and tile-fit reports are extracted from this exact commit.
 
 **Status:** local regression passed; hosted rerun pending
+
+## 2026-10-04 — Keep RTL unfrozen after latest physical rerun
+
+**Context:** The latest retained GDS artifact is from commit
+`c1e860c1498d267341c8efe7e9fb16e985b06941` with placement target density 70
+and a 20 ns clock. The 24-tile `6x4` envelope remains `1289.28 × 710.64` µm.
+The measured instance utilization is `77.5267%`; antenna, Magic DRC, route
+DRC, and netgen LVS all pass. Slow-corner setup remains negative at
+`-5.1042833627` ns WNS and `-446.3203550849` ns TNS with `252` violations.
+
+**Decision:** Keep the RTL unfrozen and do not prepare the submission package.
+The density-only P&R change is retained because it removed the previous
+antenna failures and materially improved timing, but it does not close the
+50 MHz / 20 ns requirement. Any next attempt must remain targeted to physical
+timing/P&R and must recheck the same area, utilization, timing, antenna, DRC,
+LVS, and 24-tile gates.
+
+**Alternatives considered:** Freezing on green workflows would ignore the
+negative worst-corner setup slack. Relaxing the clock or changing RTL before
+isolating a remaining P&R timing lever would violate the requested closure
+criteria and targeted-fix boundary.
+
+**Consequences:** The latest report supersedes the prior density-60 result for
+current status, while the old artifact remains useful as a before/after
+baseline. The design is physically cleaner but still not submission-ready.
+
+**Status:** hosted rerun verified; timing closure pending
