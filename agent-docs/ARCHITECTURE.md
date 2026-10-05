@@ -121,6 +121,14 @@ document):
   physical buffer; if implemented separately, log why in `decisions.md`).
 - A few bytes of mailbox storage.
 
+The descriptor read is combinational and has one logical address. Four 32-bit
+read slices use separate preserved row decoders and balanced selection trees to
+limit each row select to 32 data-bit loads. Only the decoders retain hierarchy;
+storage and read-data logic can still optimize across the top-level boundary.
+The runtime keeps a candidate address selected while idle and consumes data only
+on the existing pending-first load enables. This adds no action or rearm cycle.
+Physical area and timing for this topology require a new routed report.
+
 Trace memory should stay small by design (see `SPEC.md` §9's "capture the first
 violation plus a small window" property) — resist the temptation to grow trace
 depth "to be safe." Small, well-targeted capture is a deliberate feature, not a

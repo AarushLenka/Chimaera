@@ -24,14 +24,18 @@ verilator --lint-only -Wall --top-module tt_um_chimaera src/*.v
 
 echo "== Yosys generic synthesis =="
 yosys_log="$(mktemp /tmp/chimaera-yosys.XXXXXX)"
-trap 'rm -f "$smoke_binary" "$yosys_log"' EXIT
+yosys_netlist="$(mktemp /tmp/chimaera-yosys-netlist.XXXXXX)"
+trap 'rm -f "$smoke_binary" "$yosys_log" "$yosys_netlist"' EXIT
 if ! yosys -Q -T -l "$yosys_log" -p \
-  'read_verilog -sv src/*.v; hierarchy -top tt_um_chimaera; proc; opt; memory_map; opt; techmap; opt; stat' \
+  "read_verilog -sv src/*.v; hierarchy -top tt_um_chimaera; proc; opt; memory_map; opt; techmap; opt; stat; flatten; opt_clean; check -assert; write_json $yosys_netlist" \
   >/dev/null 2>&1; then
   cat "$yosys_log"
   exit 1
 fi
 grep -m1 -A12 '^=== design hierarchy ===' "$yosys_log"
+
+echo "== descriptor read topology and equivalence =="
+python3 scripts/check_descriptor_read.py "$yosys_netlist"
 
 if [[ "${RUN_COCOTB:-0}" == "1" ]]; then
   echo "== cocotb simulation =="

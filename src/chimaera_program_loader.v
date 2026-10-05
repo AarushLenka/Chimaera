@@ -9,6 +9,68 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
+// Preserve only the local decoder, so unused descriptor bits can still be
+// removed when the read data is connected to the runtime at the top level.
+/* verilator lint_off DECLFILENAME */
+(* keep_hierarchy = "yes" *)
+module chimaera_descriptor_decoder (
+    input  wire [4:0]  address,
+    output wire [31:0] select_row
+);
+  genvar row;
+  generate
+    for (row = 0; row < 32; row = row + 1) begin : decode_row
+      assign select_row[row] = address == row[4:0];
+    end
+  endgenerate
+endmodule
+
+// One combinational read slice. Each local select drives only READ_WIDTH bits.
+module chimaera_descriptor_read_slice #(
+    parameter integer READ_WIDTH = 32
+) (
+    input  wire [4:0]                   address,
+    input  wire [32*READ_WIDTH-1:0]     words,
+    output wire [READ_WIDTH-1:0]        data
+);
+  wire [31:0] select_row;
+  wire [READ_WIDTH-1:0] selected [0:31];
+  wire [READ_WIDTH-1:0] pairs [0:15];
+  wire [READ_WIDTH-1:0] quads [0:7];
+  wire [READ_WIDTH-1:0] octets [0:3];
+  wire [READ_WIDTH-1:0] halves [0:1];
+
+  // keep prevents merging these equivalent decoder instances; keep_hierarchy
+  // prevents flattening their gates into one shared decoder.
+  (* keep = "true", keep_hierarchy = "yes" *)
+  chimaera_descriptor_decoder decoder (
+      .address(address),
+      .select_row(select_row)
+  );
+
+  genvar row;
+  generate
+    for (row = 0; row < 32; row = row + 1) begin : decode_row
+      assign selected[row] = words[row*READ_WIDTH +: READ_WIDTH] &
+                             {READ_WIDTH{select_row[row]}};
+    end
+    for (row = 0; row < 16; row = row + 1) begin : reduce_pairs
+      assign pairs[row] = selected[2*row] | selected[2*row+1];
+    end
+    for (row = 0; row < 8; row = row + 1) begin : reduce_quads
+      assign quads[row] = pairs[2*row] | pairs[2*row+1];
+    end
+    for (row = 0; row < 4; row = row + 1) begin : reduce_octets
+      assign octets[row] = quads[2*row] | quads[2*row+1];
+    end
+    for (row = 0; row < 2; row = row + 1) begin : reduce_halves
+      assign halves[row] = octets[2*row] | octets[2*row+1];
+    end
+  endgenerate
+  assign data = halves[0] | halves[1];
+endmodule
+/* verilator lint_on DECLFILENAME */
+
 module chimaera_program_loader (
     input  wire         clk,
     input  wire         rst_n,
@@ -44,6 +106,7 @@ module chimaera_program_loader (
   localparam [3:0] OP_WRITE_MUTATION   = 4'h6;
   localparam [3:0] OP_WRITE_CONTRACT   = 4'h7;
   localparam [3:0] OP_COMMIT           = 4'he;
+  localparam integer DESCRIPTOR_READ_WIDTH = 32;
 
   reg [127:0] descriptor_memory [0:31];
   reg         load_active;
@@ -63,7 +126,24 @@ module chimaera_program_loader (
   wire [15:0] frame_payload = frame_data[15:0];
   wire [5:0]  commit_count = {1'b0, frame_address} + 6'd1;
 
-  assign descriptor_data = descriptor_memory[descriptor_address];
+  // Partition only the read logic; the 32 x 128-bit storage and write port are
+  // shared. All slices see the same address and add no register/rearm cycle.
+  genvar slice;
+  genvar descriptor;
+  generate
+    for (slice = 0; slice < 128/DESCRIPTOR_READ_WIDTH; slice = slice + 1) begin : read_slice
+      wire [32*DESCRIPTOR_READ_WIDTH-1:0] slice_words;
+      for (descriptor = 0; descriptor < 32; descriptor = descriptor + 1) begin : pack_words
+        assign slice_words[descriptor*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH] =
+            descriptor_memory[descriptor][slice*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH];
+      end
+      chimaera_descriptor_read_slice #(.READ_WIDTH(DESCRIPTOR_READ_WIDTH)) reader (
+          .address(descriptor_address),
+          .words(slice_words),
+          .data(descriptor_data[slice*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH])
+      );
+    end
+  endgenerate
   assign load_in_progress = load_active;
   assign mutation_config_0 = {
       mutation_memory_0[3], mutation_memory_0[2],

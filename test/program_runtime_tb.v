@@ -65,6 +65,19 @@ module program_runtime_tb;
 
   always #5 clk = ~clk;
 
+  // Idle read addresses are unspecified; every consumed descriptor must still
+  // belong to the pending-first winner, including a simultaneous fire.
+  always @(posedge clk) begin
+    if (rst_n && !execution_halted) begin
+      if (dut.load_0 && descriptor_address !== dut.request_state_0)
+        $fatal(1, "context 0 consumed the wrong descriptor address");
+      if (dut.load_1 && descriptor_address !== dut.request_state_1)
+        $fatal(1, "context 1 consumed the wrong descriptor address");
+      if (dut.load_0 && dut.load_1)
+        $fatal(1, "both cells consumed the single read port");
+    end
+  end
+
   initial begin
     descriptor_memory[0] = 128'h0100_0001_0810_1010_1000_0000_0000_0009;
     descriptor_memory[1] = 128'h0000_0000_0010_1000_1000_0020_0000_000a;

@@ -651,3 +651,179 @@ hierarchy cells). The RTL diff against `4343ee9` is empty, and configuration
 checks confirm that only the routed timing-repair switch changes. Cocotb was
 not requested by this gate invocation; hosted gate-level and physical evidence
 remain separate obligations.
+
+## 2026-10-05 — Keep Phase 7 open after routed repair
+
+**Context:** The exact hosted report for commit `922824e4a68a5ad210c46bb571526b53a2af9047`
+and workflow `37285614053` confirms that the routed timing-repair stage ran with
+the RTL, 20 ns clock, density 70, and hold margins preserved. It improved slow
+setup WNS to `-3.1490615451 ns`, TNS to `-129.9196733635 ns`, and reduced setup
+violations to 159, but did not reach non-negative WNS. Hold, antenna, route DRC,
+Magic DRC, LVS, and the 24-tile envelope remain clean. KLayout DRC was skipped;
+the final artifact also records 1,001 `EST-0026` missing-route warnings and four
+disconnected pins, with zero marked critical.
+
+The final worst path starts at `input_frontend.loaded_bank/_098_` /
+`sync_value[2]`, crosses `loaded_rise_edges[2]`, and ends at
+`loaded_runtime.reaction_cell_1.action_value[3]`. The post-GRT resizer reported
+no setup violations using its estimated routed parasitics, while final detailed
+route STA still reports the `-3.149061 ns` violation.
+
+**Decision:** Treat workflow success as verified artifact generation and clean
+signoff checks, not as Phase 7 timing closure. Keep `CLOCK_PERIOD=20`, density
+70, both hold margins, and `RUN_POST_GRT_RESIZER_TIMING=true`. Keep RTL
+unfrozen and investigate the loaded per-cell event/rearm fanout before changing
+the clock or trying another unisolated P&R adjustment.
+
+**Alternatives considered:** Freezing on a green workflow would ignore the
+negative slow-corner slack. Repeating the hold-margin experiment does not target
+this setup path. Adding a rearm cycle would change the fixed-latency contract and
+requires an explicit ABI/spec decision, so it is not being introduced here.
+
+**Consequences:** The routed-repair experiment is retained as a measured
+improvement, but Phase 7's timing gate remains unmet. Any RTL topology change
+must preserve fixed-cycle behavior, pass simulation and synthesis, and then be
+validated by a fresh exact-commit hosted GDS run.
+
+**Status:** hosted rerun verified; Phase 7 timing closure pending
+
+## 2026-10-05 — Target the shared descriptor read and its control fanout
+
+**Context:** Further inspection of the exact `922824e` slow-corner report maps
+the worst path through cell 0's event matcher, arbitration/request-address
+logic, the loader's descriptor-memory read, and cell 1's action-value reload.
+The path contains 15 `fanout*` buffers with a combined cell delay of
+`9.015922 ns`; this is measured path delay, not a prediction of recoverable
+slack. All 159 reported setup violations originate from three loaded-bank
+registers (133, 16, and 10 paths respectively). Most endpoints are descriptor
+reload fields/control, but current output and fault-state registers also appear.
+Reducing input fanout alone therefore does not address every remaining path.
+
+**Decision:** Propose two isolated RTL experiments while retaining the 20 ns
+clock, single descriptor read port, 32 x 128-bit ABI, and current arbitration
+and cycle behavior:
+
+1. Remove the unused idle-address-zero selection from the runtime. Keep the
+   candidate request address on the read port even when no cell loads:
+
+   ```verilog
+   wire select_request_1 = !pending_0 &&
+       (pending_1 || (!fire_0 && fire_1));
+   assign descriptor_address = select_request_1 ? request_state_1 : request_state_0;
+   ```
+
+   Existing `service_0`/`service_1` and load enables retain their behavior.
+   An exhaustive Boolean/address check passed 32,768 combinations, including
+   15,360 combinations with an active read: whenever either cell loads, the
+   proposed and current addresses are identical. This checks the address
+   invariant only; simulation and synthesis remain required before adoption.
+
+2. Evaluate a partitioned combinational descriptor read with local address
+   decoders and balanced selection, starting with eight 16-bit output slices.
+   The goal is to limit each decoded select's load rather than distribute a
+   late binary select through a long global buffer tree. Preserve the local
+   decoder boundaries only as needed and inspect the mapped netlist to ensure
+   synthesis did not merge them back. This retains one logical read port and
+   the existing storage; decoder replication can increase area and must be
+   measured. Its physical benefit remains a hypothesis.
+
+After each functional experiment, run the local verification gate and inspect
+the synthesized control/memory topology. Only a fresh exact-commit routed
+report can establish improvement or closure. If direct action/fault paths
+remain critical, investigate local event/fire distribution separately.
+
+**Alternatives considered:** More input synchronizer banks may reduce early
+path loading but leave the shared read/arbitration chain. A second descriptor
+read port duplicates substantial read logic. Registering the reload path changes
+cell readiness and the accepted rearm schedule. In clarification of the previous
+entry, changing rearm latency does not automatically change the current action's
+event-to-output latency; these are distinct contracts, and both need validation.
+Those larger architecture choices are deferred pending measurements and an
+explicit design decision.
+
+**Consequences:** No RTL or P&R configuration has changed in this analysis.
+The user reports that the downstream precheck is still running; the completed
+GDS build does not establish a completed workflow or final submission signoff.
+Let that check finish while preparing local candidates. All 1,001 `EST-0026`
+warnings occur in the intermediate post-GRT repair log, not final detailed-route
+STA. The disconnected-pin table lists exactly `ena` and reserved `ui_in[5:7]`,
+which `project.v` explicitly marks unused; these counts are not evidence of four
+broken functional nets. Final slew/capacitance/fanout violations remain real
+electrical constraints to inspect alongside setup, and precheck may add findings.
+
+**Status:** proposed; source/netlist diagnosis and address invariant verified;
+RTL implementation and physical validation pending
+
+## 2026-10-05 — Implement candidate selection and four local read decoders
+
+**Context:** After discussing decoder replication's possible area cost, Hausen
+approved implementation with "ok implement it". The address-only change passed
+all seven standalone RTL benches before decoder experiments. Separate snapshots
+of the original `922824e` sources and the address-only sources were retained for
+the local comparison; the current hosted precheck was not modified or replaced.
+
+**Decision:** Implement the candidate-address selection and partition the one
+logical descriptor read into four 32-bit slices with independent row decoders
+and balanced OR selection. Preserve hierarchy and prevent merging only at each
+decoder instance, allowing storage and the remaining read logic to optimize.
+Keep the original 32 x 128-bit memory, write interface, arbitration, output
+latency, and bounded rearm schedule. No clock, tile, density, hold-margin, or
+workflow configuration changed.
+
+**Alternatives considered:** Eight 16-bit slices reduce each select's load
+further, but four 32-bit slices use less logic in the local comparisons. The
+initial experiment preserved whole read slices and kept 64 otherwise-unused
+descriptor bits alive at the top level. Narrowing the preserved boundaries to
+decoders removes that storage penalty. An address-only implementation removes
+five generic muxes before ABC but does not address the memory read distribution.
+
+The following measurements use the same local Yosys `synth -flatten -noabc`
+followed by `abc -g simple` pipeline. Counts exclude `$scopeinfo` metadata and
+include all instantiated submodules. They are generic logic counts, not IHP
+standard-cell area, utilization, or delay; differences in gate mix and mapping
+mean a higher pre-ABC count need not mean a higher physical area.
+
+| Experiment | Pre-ABC generic cells | After ABC simple mapping | Pre-ABC register bits |
+|---|---:|---:|---:|
+| Original full top | 26,269 | 28,423 | 5,831 |
+| Address-only full top | 26,264 | 28,821 | 5,831 |
+| Original loader only | 10,006 | 13,643 | 4,683 |
+| Whole 16-bit read slices, loader only | 14,847 | 14,393 | 4,683 |
+| Whole 32-bit read slices, loader only | 14,474 | 14,108 | 4,683 |
+| Whole 16-bit read slices, full top | 31,232 | 28,496 | 5,895 |
+| Decoder-only boundaries, 16-bit slices, full top | 31,040 | 28,238 | 5,831 |
+| Decoder-only boundaries, 32-bit slices, full top (selected) | 30,668 | 27,713 | 5,831 |
+
+The selected implementation has 710 fewer generic mapped cells (about 2.50%)
+than the original top and the same pre-ABC storage count. This screens out an
+obvious mapped-count/storage regression; it does not establish physical area
+or timing improvement. The existing unflattened local-verify pipeline reports
+39,810 hierarchy cells, versus its prior 35,347 baseline; the initial whole
+16-bit slice candidate reported 40,183. Those counts use a different pipeline
+from the table and must not be compared directly to its mapped totals. No local
+physical area or slack is available because the IHP PDK and OpenROAD are absent.
+
+**Consequences:** The final local gate passed 30 host tests, all five Phase 6
+demos, seven standalone RTL benches, Phase 4 smoke, lint, generic synthesis,
+and the new topology/equivalence checks. The expanded loader bench performs
+512 word writes over all 32 rows and eight ABI words, including rewrites, and
+64 full asynchronous row reads; known written words remain readable while
+other words are uninitialized. The runtime bench checks consumed addresses
+and retains its same-edge simultaneous actions and pending-first rearm checks.
+
+`scripts/check_descriptor_read.py` is part of local verification: it checks
+four distinct decoders after flattening, 128 separate row-select nets, a
+maximum fanout of 32, and no decoder storage. The same structure check passed
+on the ABC-mapped candidate. A SAT proof establishes that a 32-bit read slice
+equals the original indexed read for every five-bit address and arbitrary
+1,024-bit contents. Four-state/uninitialized-memory behavior is covered by
+simulation separately. Cocotb was skipped because no environment is available;
+the existing local gate's host-generated RTL replays and standalone benches ran.
+
+The next physical checkpoint is a new exact-commit hosted GDS run comparing
+area, utilization, all-corner setup/hold, electrical constraints, DRC, antenna,
+LVS, and tile fit against `922824e`. The ongoing precheck belongs to the old
+GDS artifact and remains separate evidence. Phase 7 stays open.
+
+**Status:** confirmed by Hausen; implemented and locally verified; physical
+validation pending

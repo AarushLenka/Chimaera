@@ -589,3 +589,98 @@ source-diff checks confirm that the routed-repair switch is the sole
 flow-parameter change and RTL matches `4343ee9`. A new exact-commit physical
 report is still required; enabling repair alone does not establish closure,
 and Phase 7 remains open.
+
+## 2026-10-05 — Routed timing-repair rerun still misses slow setup
+
+The hosted GDS build for exact commit `922824e4a68a5ad210c46bb571526b53a2af9047`
+completed successfully in workflow `37285614053`. The retained report confirms
+`CLOCK_PERIOD=20`, target density 70, `RUN_POST_GRT_RESIZER_TIMING=true`, and
+the existing `0.10` placement / `0.05` global-route hold margins. The final die
+remains `1289.28 × 710.64 µm` within the configured 24-tile envelope.
+
+Enabling routed timing repair improved the slow-corner result from the exact
+`4343ee9` report: setup WNS moved from `-3.6422794700 ns` to
+`-3.1490615451 ns`, TNS from `-248.1556363971 ns` to `-129.9196733635 ns`,
+and setup violations from 249 to 159. Hold has zero violations. Standard-cell
+area is `705168 µm²`, utilization is `78.1422%`, and the timing-repair buffer
+count remains 10,921. Final route DRC, Magic DRC, LVS, and antenna metrics are
+clean; KLayout DRC is skipped/unreported. The artifact also records 1,001
+`EST-0026` missing-route warnings and four disconnected pins, of which zero are
+critical. Max slew remains at 287 violations and max fanout at 419.
+
+The remaining worst path starts at `input_frontend.loaded_bank/_098_`
+(`sync_value[2]`), travels through `loaded_rise_edges[2]` and the loaded
+runtime's event/rearm logic, and ends at
+`loaded_runtime.reaction_cell_1.action_value[3]`. Its arrival is `23.859707 ns`
+against a `20.710646 ns` requirement, for `-3.149061 ns` slack. The post-GRT
+resizer log reported no estimated setup violations before detailed routing, so
+the final residual remains a routed manifestation of the loaded event/rearm
+topology. Phase 7 remains open and RTL remains unfrozen; the next session
+should evaluate a per-cell event-path fanout change before another blind P&R
+knob trial.
+
+## 2026-10-05 — Trace the remaining failures through the descriptor read
+
+The user clarified that the GDS build had passed but its downstream precheck
+was still running, with an estimated three hours remaining. That check remains
+pending; local timing analysis can proceed without cancelling or replacing it.
+
+Mapping the retained worst path into the final netlist showed that cell 0's
+event match feeds arbitration, the descriptor request address, the shared
+32-entry memory read, and cell 1's next action register. Fifteen fanout buffers
+on that path account for `9.015922 ns` of cell delay. All 159 reported setup
+failures start at three loaded-bank registers, predominantly ending at descriptor
+reload/control fields, with some current output/fault-state endpoints. This
+narrows the next experiment beyond simply adding more input synchronizer banks.
+
+An exhaustive 32,768-combination check verified a proposed address simplification:
+keep a candidate request address on the read port while idle, instead of selecting
+zero, and retain the existing load/arbitration signals. All 15,360 combinations
+where a read is consumed retain exactly the original address. The next proposed
+experiment is a single-port read split into local decoder/output slices, with
+simulation and mapped-netlist inspection before any hosted physical comparison.
+Neither experiment has been applied to RTL, and neither has physical results yet.
+
+The warning review also clarified the previous entry: all 1,001 `EST-0026`
+warnings belong to intermediate post-GRT repair. The four disconnected pins
+are the explicitly unused `ena` and reserved `ui_in[5:7]`, rather than internal
+functional disconnections. Final slew, capacitance, fanout, and setup violations
+still require attention. Precheck results must be assessed when available;
+Phase 7 stays open.
+
+## 2026-10-05 — Implement and screen the descriptor-read remedy
+
+Hausen approved implementing the proposed remedy after raising the area risk.
+The runtime now keeps a candidate request address selected while idle and uses
+the existing load enables to consume it. This passed the standalone simulations
+before the descriptor-read experiments were synthesized.
+
+The read experiment initially used eight preserved 16-bit read slices. It passed
+simulation, but preserving the entire read blocks retained 64 descriptor bits
+that the original top-level synthesis discarded as unused. The implementation
+was refined to preserve only the decoder boundaries. Both 16-bit and 32-bit
+variants passed the RTL benches, and the four 32-bit slices were selected for
+their smaller mapped logic count. The storage, one logical read port, descriptor
+ABI, same-edge actions, and existing rearm schedule remain unchanged.
+
+In a consistent full-top Yosys/ABC simple-gate comparison excluding scope
+metadata, the final candidate maps to 27,713 cells versus 28,423 for the original
+sources, about 2.50% fewer. Both have 5,831 pre-ABC register bits. The pre-ABC
+generic count increases, and the ordinary unflattened local gate reports 39,810
+hierarchy cells; these figures describe different gate mixes/pipelines rather
+than physical area. All measured alternatives are recorded in `decisions.md`.
+The absence of the IHP PDK and OpenROAD prevents a local routed area/timing claim.
+
+The final local verification passed 30 host tests, five Phase 6 demos, seven RTL
+benches, the Phase 4 smoke test, lint, synthesis, and the new topology/proof gate.
+The loader test now covers 512 word writes and 64 full-row reads across the entire
+memory. The topology check confirms four separate decoders with distinct select
+nets and maximum select fanout 32, including after ABC mapping. A SAT proof checks
+the new combinational slice against the original indexed read for all addresses
+and arbitrary data; simulation covers uninitialized-memory behavior. Cocotb was
+unavailable, so that optional suite was skipped.
+
+No workflow was altered or pushed, and the existing precheck was left running.
+The next step is an exact-commit hosted physical comparison of the implemented
+candidate. Area, utilization, slow setup closure, and final electrical/signoff
+checks remain unverified for this RTL; Phase 7 is still open.

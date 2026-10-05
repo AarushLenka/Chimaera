@@ -20,7 +20,11 @@ module program_loader_tb;
   wire [15:0] computed_crc;
 
   integer index;
+  integer pass;
+  integer address_index;
   reg [15:0] words [0:15];
+  reg [15:0] readback_pattern = 16'hace1;
+  reg [127:0] expected_memory [0:31];
 
   chimaera_program_loader dut (
       .clk(clk),
@@ -145,7 +149,32 @@ module program_loader_tb;
       $fatal(1);
     end
 
-    $display("PASS: loader ordering, CRC, bounds, readback, and resume");
+    // Exercise all rows and all eight word slices through the real write port,
+    // including rewrites. Unwritten words in other rows are still unknown on
+    // the first pass and must not contaminate the selected known word.
+    for (pass = 0; pass < 2; pass = pass + 1) begin
+      send_frame(make_frame(4'h0, 1'b0, 5'd0, 3'd0, 16'd0));
+      for (index = 0; index < 256; index = index + 1) begin
+        readback_pattern = {readback_pattern[14:0],
+            readback_pattern[15] ^ readback_pattern[13] ^
+            readback_pattern[12] ^ readback_pattern[10]};
+        expected_memory[index/8][(index%8)*16 +: 16] = readback_pattern;
+        descriptor_address = index[7:3];
+        send_frame(make_frame(4'h1, 1'b0, index[7:3], index[2:0], readback_pattern));
+        #1;
+        if (load_error || descriptor_data[(index%8)*16 +: 16] !== readback_pattern)
+          $fatal(1, "word readback mismatch pass=%0d row=%0d word=%0d", pass, index/8, index%8);
+      end
+      // Changing the address must expose the entire row without another clock.
+      for (address_index = 31; address_index >= 0; address_index = address_index - 1) begin
+        descriptor_address = address_index[4:0];
+        #1;
+        if (descriptor_data !== expected_memory[address_index])
+          $fatal(1, "full descriptor readback mismatch pass=%0d row=%0d", pass, address_index);
+      end
+    end
+
+    $display("PASS: loader ordering, CRC, bounds, resume, and 512 word writes / 64 asynchronous row reads");
     $finish;
   end
 endmodule

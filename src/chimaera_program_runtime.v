@@ -103,13 +103,15 @@ module chimaera_program_runtime (
   // other context firing every cycle. With no pending work, cell 0 breaks ties.
   wire service_0 = running &&
       (pending_0 || (!pending_1 && fire_0));
-  wire service_1 = running && !pending_0 &&
+  wire select_request_1 = !pending_0 &&
       (pending_1 || (!fire_0 && fire_1));
+  wire service_1 = running && select_request_1;
   wire load_0 = service_0;
   wire load_1 = service_1;
 
-  assign descriptor_address = service_0 ? request_state_0 :
-                              service_1 ? request_state_1 : 5'd0;
+  // The read data is consumed only on a load. Keep a candidate selected while
+  // idle so running/service_0 do not add another gate to every address bit.
+  assign descriptor_address = select_request_1 ? request_state_1 : request_state_0;
 
   wire [2:0] selected_serial_mode = {1'b0, descriptor_data[125:124]};
   wire selected_dynamic_output = selected_serial_mode == 3'd2;
