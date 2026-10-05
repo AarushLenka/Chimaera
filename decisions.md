@@ -591,3 +591,63 @@ rerun is still required to measure the new slow-corner timing, area, utilization
 and signoff reports.
 
 **Status:** confirmed by Hausen; local RTL gate passed; hosted physical rerun pending
+
+## 2026-10-05 — Enable routed timing repair after diagnosing the exact report
+
+**Context:** `GDS_logs_4343ee9/runs/wokwi/final/commit_id.json` identifies RTL
+commit `4343ee9868400fb85a6dfa3238d4753c331cd2ac` and hosted workflow
+`37219827449`. At 20 ns and target density 70, final slow-corner setup WNS is
+`-3.6422794700 ns`, TNS is `-248.1556363971 ns`, and 249 endpoints violate
+setup. Standard-cell area is `705103 µm²`, utilization is `78.1349%`, and the
+`1289.28 × 710.64 µm` die retains the 24-tile envelope. Final route/Magic DRC,
+LVS, antenna, and hold checks are clean. Slow-corner slew violations total 345;
+fanout violations total 409, and the maximum capacitance violation count is 20.
+
+The worst path starts at `input_frontend.loaded_bank.sync_previous[7]` and ends
+at `loaded_runtime.reaction_cell_1.action_value[3]`. This endpoint stores a
+descriptor action value, not the pin-drive output. The path passes through
+event matching, shared rearm arbitration/address selection, the asynchronous
+32-entry descriptor-memory read, and action-value selection. Its arrival is
+`24.359962 ns` against a `20.717682 ns` requirement. Fifteen `fanout*` buffer
+output arcs contribute `9.608169 ns`; one frontend hold-delay arc contributes
+`0.615390 ns`. These are arc-delay contributions, not a prediction of how much
+delay repair can remove.
+
+Post-CTS repair loads fast, slow, and typical libraries, reports no setup
+violations with estimated parasitics, then inserts 6,414 hold buffers. The
+intermediate STA metrics report typical-corner slack only; they do not prove
+slow-corner closure. More decisively, `resolved.json` sets
+`RUN_POST_GRT_RESIZER_TIMING=false`, and `flow.log` explicitly skips
+`OpenROAD.ResizerTimingPostGRT`. No timing-repair pass follows global routing.
+
+**Decision:** Replace the proposed density-65 trial with one evidence-backed
+P&R correction: set `RUN_POST_GRT_RESIZER_TIMING=true`. Preserve every RTL
+source from `4343ee9`, `CLOCK_PERIOD=20`, density 70, and both hold margins.
+The enabled step estimates parasitics from global routing and performs setup
+and hold repair before detailed routing. The current flow's resizer default
+already loads all three STA corners; adding a corner override is unnecessary.
+
+**Alternatives considered:** Density 65 does not directly address the skipped
+routed repair stage, and the earlier density 60-to-70 improvement does not
+establish what 65 would do. Lower hold margins were already tried and do not
+address this path's large fanout-buffer delay. An RTL redesign of descriptor
+rearm or memory selection is a fallback if routed repair cannot close setup;
+adding rearm latency would require explicit ABI/compiler timing consideration.
+Neither false-path/multicycle exceptions nor clock relaxation are justified
+by this functioning, same-cycle rearm path.
+
+**Consequences:** This corrects a confirmed flow omission but is not a proven
+timing fix. LibreLane documents post-GRT timing repair as experimental, with
+possible longer runs or hangs. The new exact-commit final report must show
+slow-corner setup WNS at least zero and zero setup violations while hold,
+DRC/LVS, antenna, and tile fit remain clean. Also compare slew/capacitance
+violations, area/utilization, and buffer counts. RTL freeze remains blocked.
+
+**Status:** focused P&R correction verified locally; hosted physical rerun pending
+
+The local gate passed 30 host tests, five Phase 6 demos, seven standalone RTL
+benches, Phase 4 smoke, Verilator lint, and generic Yosys synthesis (35,347
+hierarchy cells). The RTL diff against `4343ee9` is empty, and configuration
+checks confirm that only the routed timing-repair switch changes. Cocotb was
+not requested by this gate invocation; hosted gate-level and physical evidence
+remain separate obligations.

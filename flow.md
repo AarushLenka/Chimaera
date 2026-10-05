@@ -559,3 +559,33 @@ This is a new RTL checkpoint, not physical closure. The retained GDS reports are
 from the prior commit, so the new fanout fix still needs a hosted GDS/precheck/
 gate-level rerun and exact-commit timing, area, utilization, DRC/LVS, antenna,
 and tile-fit extraction.
+
+## 2026-10-05 — Trace the remaining setup failure to the descriptor-rearm path
+
+The retained report from `4343ee9` and workflow `37219827449` establishes the
+result of the three input-bank change: slow-corner WNS improves to
+`-3.6422794700 ns`, TNS to `-248.1556363971 ns`, with 249 setup violations.
+Standard-cell area is `705103 µm²`, utilization is `78.1349%`, and the 24-tile
+die still fits. Hold, antenna, route/Magic DRC, and LVS remain clean, although
+345 slow-corner slew violations and 409 fanout violations remain.
+
+Tracing the final worst path clarified that `reaction_cell_1.action_value[3]`
+is an active-descriptor register, not the output-drive register. The path runs
+from loaded-bank edge history through event matching, shared rearm selection,
+and the 32-entry asynchronous descriptor read. Its 15 fanout-buffer output
+arcs account for `9.608169 ns` of the `24.359962 ns` arrival time. The
+post-CTS repair log loads all three corners; typical-only intermediate reports
+must not be mistaken for typical-only optimization.
+
+The flow then explicitly skips post-global-route timing repair because
+`RUN_POST_GRT_RESIZER_TIMING` is false. The next correction enables that one
+step, allowing setup/hold repair using routed parasitic estimates. RTL,
+density 70, the 20 ns period, and the existing hold margins remain unchanged.
+This replaces the proposed density-65 experiment with a change directed at a
+confirmed missing flow stage. The local gate passed 30 host tests, all five
+Phase 6 demos, seven standalone RTL benches, Phase 4 smoke, Verilator lint,
+and generic Yosys synthesis (35,347 hierarchy cells). Configuration and
+source-diff checks confirm that the routed-repair switch is the sole
+flow-parameter change and RTL matches `4343ee9`. A new exact-commit physical
+report is still required; enabling repair alone does not establish closure,
+and Phase 7 remains open.
