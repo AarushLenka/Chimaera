@@ -19,6 +19,8 @@ module chimaera_program_runtime (
     input  wire [4:0]   context_entry_1,
 
     output wire [4:0]   descriptor_address,
+    output wire [39:0]  descriptor_candidates,
+    output wire [6:0]   descriptor_decision,
     input  wire [127:0] descriptor_data,
 
     input  wire [7:0]   sync_inputs,
@@ -68,6 +70,8 @@ module chimaera_program_runtime (
   wire [7:0] cell_drive_enable_1;
   wire [4:0] next_state_0;
   wire [4:0] next_state_1;
+  wire branch_condition_0;
+  wire branch_condition_1;
   wire [7:0] current_shift_0;
   wire [7:0] current_shift_1;
   wire [7:0] post_shift_0;
@@ -112,6 +116,18 @@ module chimaera_program_runtime (
   // The read data is consumed only on a load. Keep a candidate selected while
   // idle so running/service_0 do not add another gate to every address bit.
   assign descriptor_address = select_request_1 ? request_state_1 : request_state_0;
+  // These addresses come only from registered control/pending state. The memory
+  // decodes all eight before event matching and pending-first arbitration finish.
+  assign descriptor_candidates = {
+      pending_state_1, active_control_1[14:10],
+      active_control_1[9:5], active_control_1[4:0],
+      pending_state_0, active_control_0[14:10],
+      active_control_0[9:5], active_control_0[4:0]
+  };
+  assign descriptor_decision = {
+      select_request_1, pending_1, pending_0,
+      fire_timeout_1, fire_timeout_0, branch_condition_1, branch_condition_0
+  };
 
   wire [2:0] selected_serial_mode = {1'b0, descriptor_data[125:124]};
   wire selected_dynamic_output = selected_serial_mode == 3'd2;
@@ -199,6 +215,7 @@ module chimaera_program_runtime (
       .mutation_config_0(mutation_config_0),
       .fault_lfsr(fault_lfsr),
       .next_state_0(next_state_0),
+      .branch_condition_0(branch_condition_0),
       .current_shift_0(current_shift_0),
       .post_shift_0(post_shift_0),
       .mutation_delay_0(mutation_delay_0),
@@ -214,6 +231,7 @@ module chimaera_program_runtime (
       .control_1(active_control_1),
       .mutation_config_1(mutation_config_1),
       .next_state_1(next_state_1),
+      .branch_condition_1(branch_condition_1),
       .current_shift_1(current_shift_1),
       .post_shift_1(post_shift_1),
       .mutation_delay_1(mutation_delay_1),

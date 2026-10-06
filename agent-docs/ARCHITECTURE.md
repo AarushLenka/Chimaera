@@ -121,13 +121,21 @@ document):
   physical buffer; if implemented separately, log why in `decisions.md`).
 - A few bytes of mailbox storage.
 
-The descriptor read is combinational and has one logical address. Four 32-bit
-read slices use separate preserved row decoders and balanced selection trees to
-limit each row select to 32 data-bit loads. Only the decoders retain hierarchy;
-storage and read-data logic can still optimize across the top-level boundary.
-The runtime keeps a candidate address selected while idle and consumes data only
-on the existing pending-first load enables. This adds no action or rearm cycle.
-Physical area and timing for this topology require a new routed report.
+The descriptor read is combinational and selects one logical row. Each of four
+32-bit read slices decodes eight registered candidate state IDs in parallel:
+event, alternate, timeout, and pending successors for each context. The late
+branch/timeout decisions and pending-first context winner then select an already
+decoded row. This removes binary successor/address multiplexers followed by row
+decoding from the event path. Decoder and selector hierarchy is retained through
+technology mapping; storage and read-data logic can still optimize across the
+top-level boundary, and each final row select drives at most 32 data-bit loads.
+
+The runtime's binary `descriptor_address` remains an observation/checking signal;
+the physical read receives the registered candidates and late decision bits
+directly. The memory, loader stream/CRC, load enables, same-edge actions, and
+inclusive two-cycle rearm schedule are unchanged, with no added register. Local
+SAT proves the read equals indexed selection for arbitrary candidates, decisions,
+and memory data. Physical signoff still requires a new exact-commit routed report.
 
 Trace memory should stay small by design (see `SPEC.md` §9's "capture the first
 violation plus a small window" property) — resist the temptation to grow trace

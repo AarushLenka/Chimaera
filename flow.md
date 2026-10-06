@@ -684,3 +684,25 @@ No workflow was altered or pushed, and the existing precheck was left running.
 The next step is an exact-commit hosted physical comparison of the implemented
 candidate. Area, utilization, slow setup closure, and final electrical/signoff
 checks remain unverified for this RTL; Phase 7 is still open.
+
+## 2026-10-06 — Local routed screen validates the descriptor remedy
+
+The descriptor-read candidate completed a matched local OpenROAD placement,
+CTS, hold-repair, and global-route screen using the IHP standard-cell libraries
+and the retained 20 ns SDC. The candidate finished global routing with setup
+WNS `+2.83 ns`, TNS `0 ns`, and hold slack `+0.04 ns`; the baseline finished at
+setup WNS `-0.70 ns`, TNS `-6.03 ns`, and hold slack `+0.01 ns`. Candidate
+post-hold area was `717,388 µm²` versus `690,697 µm²` for the baseline, so the
+timing gain carries a measured local area increase. Both screens report a
+global-routing congestion warning.
+
+This is comparative evidence, not a replacement for the hosted flow: the local
+screen uses a different OpenROAD/LibreLane container and stops after global
+routing without detailed-route extraction, final SPEF STA, PDN, antenna, Magic
+DRC, LVS, or KLayout DRC. The exact-commit hosted workflow must be run on the
+committed RTL before Phase 7 can close.
+
+The implementation and proof gates pass: full `scripts/local-verify.sh`, the
+descriptor topology/SAT gate, standalone selector tests, Verilator strict lint,
+and generic synthesis. The next action is to checkpoint the focused RTL/test
+change and dispatch the manual GDS workflow for that exact commit.

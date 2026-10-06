@@ -9,7 +9,7 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-// Preserve only the local decoder, so unused descriptor bits can still be
+// Preserve decoder/selector boundaries, so unused descriptor bits can still be
 // removed when the read data is connected to the runtime at the top level.
 /* verilator lint_off DECLFILENAME */
 (* keep_hierarchy = "yes" *)
@@ -25,11 +25,41 @@ module chimaera_descriptor_decoder (
   endgenerate
 endmodule
 
+// Decode stable successor candidates before late event/arbitration decisions.
+// Preserve both boundaries: ABC may optimize each decoder and the selector,
+// but cannot turn the path back into binary muxes followed by a row decoder.
+(* keep_hierarchy = "yes" *)
+module chimaera_descriptor_selector (
+    input  wire [39:0] candidates,
+    input  wire [6:0]  decision,
+    output wire [31:0] select_row
+);
+  wire [31:0] decoded [0:7];
+  genvar candidate;
+  generate
+    for (candidate = 0; candidate < 8; candidate = candidate + 1) begin : decode_candidate
+      (* keep = "true", keep_hierarchy = "yes" *)
+      chimaera_descriptor_decoder decoder (
+          .address(candidates[candidate*5 +: 5]),
+          .select_row(decoded[candidate])
+      );
+    end
+  endgenerate
+  // Candidates: event/alternate/timeout/pending for context 0, then context 1.
+  // Decisions: condition 0/1, timeout 0/1, pending 0/1, context-1 winner.
+  wire [31:0] request_0 = decision[4] ? decoded[3] :
+      decision[2] ? decoded[2] : decision[0] ? decoded[0] : decoded[1];
+  wire [31:0] request_1 = decision[5] ? decoded[7] :
+      decision[3] ? decoded[6] : decision[1] ? decoded[4] : decoded[5];
+  assign select_row = decision[6] ? request_1 : request_0;
+endmodule
+
 // One combinational read slice. Each local select drives only READ_WIDTH bits.
 module chimaera_descriptor_read_slice #(
     parameter integer READ_WIDTH = 32
 ) (
-    input  wire [4:0]                   address,
+    input  wire [39:0]                  candidates,
+    input  wire [6:0]                   decision,
     input  wire [32*READ_WIDTH-1:0]     words,
     output wire [READ_WIDTH-1:0]        data
 );
@@ -40,11 +70,12 @@ module chimaera_descriptor_read_slice #(
   wire [READ_WIDTH-1:0] octets [0:3];
   wire [READ_WIDTH-1:0] halves [0:1];
 
-  // keep prevents merging these equivalent decoder instances; keep_hierarchy
-  // prevents flattening their gates into one shared decoder.
+  // keep prevents merging equivalent local selectors; keep_hierarchy retains
+  // each selector and its early candidate decoders through technology mapping.
   (* keep = "true", keep_hierarchy = "yes" *)
-  chimaera_descriptor_decoder decoder (
-      .address(address),
+  chimaera_descriptor_selector selector (
+      .candidates(candidates),
+      .decision(decision),
       .select_row(select_row)
   );
 
@@ -77,7 +108,8 @@ module chimaera_program_loader (
     input  wire         frame_strobe,
     input  wire [31:0]  frame_data,
 
-    input  wire [4:0]   descriptor_address,
+    input  wire [39:0]  descriptor_candidates,
+    input  wire [6:0]   descriptor_decision,
     output wire [127:0] descriptor_data,
 
     output reg  [4:0]   context_entry_0,
@@ -127,7 +159,7 @@ module chimaera_program_loader (
   wire [5:0]  commit_count = {1'b0, frame_address} + 6'd1;
 
   // Partition only the read logic; the 32 x 128-bit storage and write port are
-  // shared. All slices see the same address and add no register/rearm cycle.
+  // shared. All slices select the same candidate and add no register/rearm cycle.
   genvar slice;
   genvar descriptor;
   generate
@@ -138,7 +170,8 @@ module chimaera_program_loader (
             descriptor_memory[descriptor][slice*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH];
       end
       chimaera_descriptor_read_slice #(.READ_WIDTH(DESCRIPTOR_READ_WIDTH)) reader (
-          .address(descriptor_address),
+          .candidates(descriptor_candidates),
+          .decision(descriptor_decision),
           .words(slice_words),
           .data(descriptor_data[slice*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH])
       );

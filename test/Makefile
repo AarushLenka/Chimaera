@@ -12,6 +12,8 @@ PROJECT_SOURCES = chimaera_input_frontend.v chimaera_uart_program.v chimaera_i2c
 
 .PHONY: phase5
 phase5:
+	iverilog -g2012 -s descriptor_selection_tb -o /tmp/chimaera-descriptor-selection.vvp $(SRC_DIR)/chimaera_program_loader.v descriptor_selection_tb.v
+	vvp /tmp/chimaera-descriptor-selection.vvp
 	iverilog -g2012 -s input_frontend_tb -o /tmp/chimaera-input-frontend.vvp $(SRC_DIR)/chimaera_input_frontend.v input_frontend_tb.v
 	vvp /tmp/chimaera-input-frontend.vvp
 	iverilog -g2012 -s program_loader_tb -o /tmp/chimaera-program-loader.vvp $(SRC_DIR)/chimaera_program_loader.v program_loader_tb.v
@@ -22,7 +24,7 @@ phase5:
 	vvp /tmp/chimaera-config-spi.vvp
 	iverilog -g2012 -s host_interface_tb -o /tmp/chimaera-host-interface.vvp $(SRC_DIR)/chimaera_config_spi.v $(SRC_DIR)/chimaera_program_loader.v $(SRC_DIR)/chimaera_host_interface.v host_interface_tb.v
 	vvp /tmp/chimaera-host-interface.vvp
-	iverilog -g2012 -s program_runtime_tb -o /tmp/chimaera-program-runtime.vvp $(SRC_DIR)/chimaera_reaction_cell.v $(SRC_DIR)/chimaera_generic_execution_engine.v $(SRC_DIR)/chimaera_contract_monitor.v $(SRC_DIR)/chimaera_program_runtime.v program_runtime_tb.v
+	iverilog -g2012 -s program_runtime_tb -o /tmp/chimaera-program-runtime.vvp $(SRC_DIR)/chimaera_reaction_cell.v $(SRC_DIR)/chimaera_generic_execution_engine.v $(SRC_DIR)/chimaera_contract_monitor.v $(SRC_DIR)/chimaera_program_runtime.v $(SRC_DIR)/chimaera_program_loader.v program_runtime_tb.v
 	vvp /tmp/chimaera-program-runtime.vvp
 	iverilog -g2012 -s phase5_loader_top_tb -o /tmp/chimaera-phase5-top.vvp $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES)) phase5_loader_top_tb.v
 	vvp /tmp/chimaera-phase5-top.vvp

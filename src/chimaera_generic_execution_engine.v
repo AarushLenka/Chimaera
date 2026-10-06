@@ -14,6 +14,7 @@ module chimaera_generic_execution_engine (
     input  wire [127:0] mutation_config_0,
     input  wire [15:0]  fault_lfsr,
     output wire [4:0]  next_state_0,
+    output wire        branch_condition_0,
     output wire [7:0]  current_shift_0,
     output wire [7:0]  post_shift_0,
     output wire [7:0]  mutation_delay_0,
@@ -30,6 +31,7 @@ module chimaera_generic_execution_engine (
     input  wire [34:0] control_1,
     input  wire [127:0] mutation_config_1,
     output wire [4:0]  next_state_1,
+    output wire        branch_condition_1,
     output wire [7:0]  current_shift_1,
     output wire [7:0]  post_shift_1,
     output wire [7:0]  mutation_delay_1,
@@ -207,6 +209,8 @@ module chimaera_generic_execution_engine (
                         condition_0 ? control_0[4:0] : control_0[9:5];
   assign next_state_1 = fire_timeout_1 ? control_1[14:10] :
                         condition_1 ? control_1[4:0] : control_1[9:5];
+  assign branch_condition_0 = condition_0;
+  assign branch_condition_1 = condition_1;
   assign current_shift_0 = shift_0;
   assign current_shift_1 = shift_1;
   assign post_shift_0 = faulted_shift_0;

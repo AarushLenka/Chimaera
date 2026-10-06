@@ -827,3 +827,31 @@ GDS artifact and remains separate evidence. Phase 7 stays open.
 
 **Status:** confirmed by Hausen; implemented and locally verified; physical
 validation pending
+
+## 2026-10-06 — Accept the early-decode descriptor-read timing remedy
+
+**Context:** The exact `2bf7f369` report still failed slow setup on the loaded
+event/rearm-to-descriptor path. The mapped diagnosis showed that a late binary
+request address was driving the shared asynchronous descriptor read through a
+large fanout tree.
+
+**Decision:** Keep the 32 × 128-bit descriptor ABI, one logical read port,
+20 ns clock, same-edge action behavior, and pending-first rearm schedule, but
+decode each preserved candidate state address before arbitration and select the
+already-decoded row afterward. Four 32-bit read slices retain independent
+5-to-32 decoders with bounded row-select fanout; the late selector chooses one
+decoded row per slice.
+
+**Evidence:** The universal SAT miter proves equivalence to the original
+indexed read for arbitrary candidate addresses, decisions, and memory contents.
+The local gate passes the expanded selector/read tests, topology checks, lint,
+and synthesis. A matched OpenROAD screen improved global-route setup from
+`-0.70 ns` / `-6.03 ns` TNS on the baseline to `+2.83 ns` / `0 ns` TNS on the
+candidate. The screen is not hosted signoff: it reports congestion and omits
+detailed routing, extracted SPEF, DRC/LVS, antenna, and KLayout checks.
+
+**Consequences:** The RTL remedy is accepted for an exact-commit hosted GDS
+rerun. Physical closure remains open until that workflow produces fresh
+slow-corner timing and complete signoff evidence.
+
+**Status:** confirmed by Hausen; locally proven; hosted physical validation pending

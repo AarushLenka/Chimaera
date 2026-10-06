@@ -11,10 +11,34 @@ import sys
 def main() -> None:
     modules = json.loads(Path(sys.argv[1]).read_text())["modules"]
     top = modules["tt_um_chimaera"]
-    decoders = [cell for cell in top["cells"].values()
+    selectors = [cell for cell in top["cells"].values()
+                 if cell["type"] == "chimaera_descriptor_selector"]
+    if len(selectors) != 4:
+        raise SystemExit(f"Expected four separate descriptor selectors, found {len(selectors)}")
+    selector = modules["chimaera_descriptor_selector"]
+    decoders = [cell for cell in selector["cells"].values()
                 if cell["type"] == "chimaera_descriptor_decoder"]
-    if len(decoders) != 4:
-        raise SystemExit(f"Expected four separate descriptor decoders, found {len(decoders)}")
+    if len(decoders) != 8:
+        raise SystemExit(f"Expected eight candidate decoders per selector, found {len(decoders)}")
+    # Late decisions cannot enter any decoder: its address must consist only of
+    # candidate input bits, structurally forbidding binary arbitration first.
+    candidate_bits = set(selector["ports"]["candidates"]["bits"])
+    for decoder in decoders:
+        if not set(decoder["connections"]["address"]).issubset(candidate_bits):
+            raise SystemExit("Late decision logic entered a candidate decoder")
+
+    # In the full design every candidate address is already registered; input
+    # events must not acquire an indirect path into the early address decoders.
+    registered_bits = set()
+    for cell in top["cells"].values():
+        if "port_directions" not in cell:
+            raise SystemExit("Netlist lacks cell port directions; read_liberty -lib before write_json")
+        if "CLK" in cell["connections"] or "C" in cell["connections"]:
+            if "Q" in cell["connections"] and cell["port_directions"]["Q"] == "output":
+                registered_bits.update(cell["connections"]["Q"])
+    for read_selector in selectors:
+        if not set(read_selector["connections"]["candidates"]).issubset(registered_bits):
+            raise SystemExit("A candidate address is not driven directly by a register")
 
     fanout: Counter[int] = Counter()
     for cell in top["cells"].values():
@@ -23,20 +47,22 @@ def main() -> None:
                 fanout.update(bit for bit in bits if isinstance(bit, int))
 
     output_bits = []
-    for decoder in decoders:
-        bits = decoder["connections"]["select_row"]
+    for read_selector in selectors:
+        bits = read_selector["connections"]["select_row"]
         if len(bits) != 32 or not all(isinstance(bit, int) for bit in bits):
-            raise SystemExit("Descriptor decoder did not retain all 32 row selects")
+            raise SystemExit("Descriptor selector did not retain all 32 row selects")
         output_bits.extend(bits)
     if len(set(output_bits)) != 4 * 32:
-        raise SystemExit("Descriptor decoders share row-select nets")
+        raise SystemExit("Descriptor selectors share row-select nets")
     maximum = max(fanout[bit] for bit in output_bits)
     if maximum > 32:
         raise SystemExit(f"Descriptor row-select fanout {maximum} exceeds 32")
-    if any("DFF" in cell["type"] or "LATCH" in cell["type"]
-           for cell in modules["chimaera_descriptor_decoder"]["cells"].values()):
-        raise SystemExit("Descriptor decoder contains storage")
-    print(f"PASS: four separate descriptor decoders, max row-select fanout {maximum}, no decoder storage")
+    for name in ("chimaera_descriptor_decoder", "chimaera_descriptor_selector"):
+        if any("DFF" in cell["type"].upper() or "LATCH" in cell["type"].upper() or
+               "CLK" in cell["connections"]
+               for cell in modules[name]["cells"].values()):
+            raise SystemExit(f"{name} contains storage")
+    print(f"PASS: four local selectors, eight early decoders each, max row-select fanout {maximum}, no added storage")
 
     root = Path(__file__).resolve().parents[1]
     source = root / "src/chimaera_program_loader.v"
@@ -52,7 +78,7 @@ def main() -> None:
                             text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if result.returncode:
         raise SystemExit(result.stdout)
-    print("PASS: descriptor read equals the original indexed read for every address and data value")
+    print("PASS: speculative read equals indexed read for all candidates, decisions and data")
 
 
 if __name__ == "__main__":

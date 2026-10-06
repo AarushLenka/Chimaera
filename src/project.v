@@ -62,6 +62,8 @@ module tt_um_chimaera (
   wire                   cfg_miso;
   wire                   cfg_active;
   wire [4:0]             loaded_descriptor_address;
+  wire [39:0]            loaded_descriptor_candidates;
+  wire [6:0]             loaded_descriptor_decision;
   wire [127:0]           loaded_descriptor_data;
   wire [4:0]             loaded_context_entry_0;
   wire [4:0]             loaded_context_entry_1;
@@ -157,7 +159,8 @@ module tt_um_chimaera (
       .cfg_mosi               (ui_in[4]),
       .cfg_miso               (cfg_miso),
       .cfg_active             (cfg_active),
-      .descriptor_address     (loaded_descriptor_address),
+      .descriptor_candidates  (loaded_descriptor_candidates),
+      .descriptor_decision    (loaded_descriptor_decision),
       .descriptor_data        (loaded_descriptor_data),
       .context_entry_0        (loaded_context_entry_0),
       .context_entry_1        (loaded_context_entry_1),
@@ -187,6 +190,8 @@ module tt_um_chimaera (
       .context_entry_0     (loaded_context_entry_0),
       .context_entry_1     (loaded_context_entry_1),
       .descriptor_address  (loaded_descriptor_address),
+      .descriptor_candidates(loaded_descriptor_candidates),
+      .descriptor_decision (loaded_descriptor_decision),
       .descriptor_data     (loaded_descriptor_data),
       .sync_inputs         (loaded_sync_inputs),
       .rise_edges          (loaded_rise_edges),
@@ -383,7 +388,7 @@ module tt_um_chimaera (
   assign uio_out = use_loaded_path ? loaded_value_low_only : legacy_uio_out;
   assign uio_oe = use_loaded_path ? loaded_enable : legacy_uio_oe;
 
-  wire _unused = &{ena, ui_in[7:5], cell_fire_from_timeout_0,
+  wire _unused = &{ena, ui_in[7:5], loaded_descriptor_address, cell_fire_from_timeout_0,
                    cell_fire_from_timeout_1, received_strobe,
                    // The execution bank exposes aligned edge vectors for
                    // consumers that need them; the legacy execution engine

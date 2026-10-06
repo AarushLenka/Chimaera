@@ -17,8 +17,23 @@ module program_runtime_tb;
   reg [127:0] contract_config_0 = 128'h0;
   reg [127:0] contract_config_1 = 128'h0;
   wire [4:0] descriptor_address;
-  reg [127:0] descriptor_memory [0:3];
-  wire [127:0] descriptor_data = descriptor_memory[descriptor_address[1:0]];
+  wire [39:0] descriptor_candidates;
+  wire [6:0] descriptor_decision;
+  reg [127:0] descriptor_memory [0:31];
+  wire [4095:0] descriptor_words;
+  wire [127:0] descriptor_data;
+  genvar row;
+  generate
+    for (row = 0; row < 32; row = row + 1) begin : pack_descriptors
+      assign descriptor_words[row*128 +: 128] = descriptor_memory[row];
+    end
+  endgenerate
+  chimaera_descriptor_read_slice #(.READ_WIDTH(128)) reader (
+      .candidates(descriptor_candidates),
+      .decision(descriptor_decision),
+      .words(descriptor_words),
+      .data(descriptor_data)
+  );
   wire [7:0] drive_value_0;
   wire [7:0] drive_enable_0;
   wire [7:0] drive_value_1;
@@ -40,6 +55,8 @@ module program_runtime_tb;
       .context_entry_0(context_entry_0),
       .context_entry_1(context_entry_1),
       .descriptor_address(descriptor_address),
+      .descriptor_candidates(descriptor_candidates),
+      .descriptor_decision(descriptor_decision),
       .descriptor_data(descriptor_data),
       .sync_inputs(sync_inputs),
       .rise_edges(rise_edges),
@@ -75,6 +92,9 @@ module program_runtime_tb;
         $fatal(1, "context 1 consumed the wrong descriptor address");
       if (dut.load_0 && dut.load_1)
         $fatal(1, "both cells consumed the single read port");
+      if ((dut.load_0 || dut.load_1) &&
+          descriptor_data !== descriptor_memory[descriptor_address])
+        $fatal(1, "speculative read disagrees with the consumed indexed read");
     end
   end
 
