@@ -706,3 +706,21 @@ The implementation and proof gates pass: full `scripts/local-verify.sh`, the
 descriptor topology/SAT gate, standalone selector tests, Verilator strict lint,
 and generic synthesis. The next action is to checkpoint the focused RTL/test
 change and dispatch the manual GDS workflow for that exact commit.
+
+## 2026-10-06 — Hosted run rejects four-bank replication; screen two-bank candidate
+
+The exact hosted GDS workflow for commit `934ea8b33cee80192481affa9ea672b5c9c76739`
+completed GDS and gate-level simulation successfully. Its retained slow-corner
+metrics are WNS `-7.04375 ns`, TNS `-647.88482 ns`, and `280` setup violations;
+hold has zero violations. The worst path starts at
+`input_frontend.loaded_bank/_098_/Q`. This is a physical regression from the
+prior exact commit, so the four-selector candidate is rejected despite its
+positive matched local screen.
+
+The follow-up candidate shares the eight early decoders in two banks, each
+feeding two 32-bit slices. Full local verification passes, and the matched
+global-route screen reports WNS `+0.65 ns`, TNS `0 ns`, hold `+0.03 ns`, and
+`702,469 µm²` area at `78%` utilization. The screen still warns about routing
+congestion and is not signoff evidence. Commit and hosted rerun this two-bank
+candidate before making any Phase 7 closure claim; precheck for `37435108709`
+remains separate and was still running when these metrics were reported.

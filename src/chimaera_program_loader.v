@@ -55,11 +55,15 @@ module chimaera_descriptor_selector (
 endmodule
 
 // One combinational read slice. Each local select drives only READ_WIDTH bits.
+/* verilator lint_off WIDTHTRUNC */
+/* verilator lint_off UNUSEDSIGNAL */
 module chimaera_descriptor_read_slice #(
-    parameter integer READ_WIDTH = 32
+    parameter integer READ_WIDTH = 32,
+    parameter bit USE_SHARED_SELECT = 1'b0
 ) (
     input  wire [39:0]                  candidates,
     input  wire [6:0]                   decision,
+    input  wire [31:0]                  shared_select_row,
     input  wire [32*READ_WIDTH-1:0]     words,
     output wire [READ_WIDTH-1:0]        data
 );
@@ -70,14 +74,20 @@ module chimaera_descriptor_read_slice #(
   wire [READ_WIDTH-1:0] octets [0:3];
   wire [READ_WIDTH-1:0] halves [0:1];
 
-  // keep prevents merging equivalent local selectors; keep_hierarchy retains
-  // each selector and its early candidate decoders through technology mapping.
-  (* keep = "true", keep_hierarchy = "yes" *)
-  chimaera_descriptor_selector selector (
-      .candidates(candidates),
-      .decision(decision),
-      .select_row(select_row)
-  );
+  generate
+    if (USE_SHARED_SELECT) begin : external_selector
+      assign select_row = shared_select_row;
+    end else begin : local_selector
+      // Standalone proof and simulation use the original self-contained form.
+      // Production slices share selectors in pairs to reduce replicated logic.
+      (* keep = "true", keep_hierarchy = "yes" *)
+      chimaera_descriptor_selector selector (
+          .candidates(candidates),
+          .decision(decision),
+          .select_row(select_row)
+      );
+    end
+  endgenerate
 
   genvar row;
   generate
@@ -100,6 +110,8 @@ module chimaera_descriptor_read_slice #(
   endgenerate
   assign data = halves[0] | halves[1];
 endmodule
+/* verilator lint_on UNUSEDSIGNAL */
+/* verilator lint_on WIDTHTRUNC */
 /* verilator lint_on DECLFILENAME */
 
 module chimaera_program_loader (
@@ -159,9 +171,21 @@ module chimaera_program_loader (
   wire [5:0]  commit_count = {1'b0, frame_address} + 6'd1;
 
   // Partition only the read logic; the 32 x 128-bit storage and write port are
-  // shared. All slices select the same candidate and add no register/rearm cycle.
+  // shared. Two selectors feed two adjacent slices each, reducing replicated
+  // decoder area while keeping each row-select fanout bounded.
   genvar slice;
   genvar descriptor;
+  wire [31:0] select_row_group [0:1];
+  generate
+    for (slice = 0; slice < 2; slice = slice + 1) begin : read_selector
+      (* keep = "true", keep_hierarchy = "yes" *)
+      chimaera_descriptor_selector selector (
+          .candidates(descriptor_candidates),
+          .decision(descriptor_decision),
+          .select_row(select_row_group[slice])
+      );
+    end
+  endgenerate
   generate
     for (slice = 0; slice < 128/DESCRIPTOR_READ_WIDTH; slice = slice + 1) begin : read_slice
       wire [32*DESCRIPTOR_READ_WIDTH-1:0] slice_words;
@@ -169,9 +193,13 @@ module chimaera_program_loader (
         assign slice_words[descriptor*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH] =
             descriptor_memory[descriptor][slice*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH];
       end
-      chimaera_descriptor_read_slice #(.READ_WIDTH(DESCRIPTOR_READ_WIDTH)) reader (
-          .candidates(descriptor_candidates),
-          .decision(descriptor_decision),
+      chimaera_descriptor_read_slice #(
+          .READ_WIDTH(DESCRIPTOR_READ_WIDTH),
+          .USE_SHARED_SELECT(1)
+      ) reader (
+          .candidates(40'b0),
+          .decision(7'b0),
+          .shared_select_row(select_row_group[slice/2]),
           .words(slice_words),
           .data(descriptor_data[slice*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH])
       );

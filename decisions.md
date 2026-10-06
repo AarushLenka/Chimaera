@@ -855,3 +855,27 @@ rerun. Physical closure remains open until that workflow produces fresh
 slow-corner timing and complete signoff evidence.
 
 **Status:** confirmed by Hausen; locally proven; hosted physical validation pending
+
+## 2026-10-06 — Reject four-bank replication after exact hosted timing
+
+**Context:** Exact hosted GDS run `37435108709` for commit `934ea8b` completed
+the GDS and gate-level jobs but reported slow setup WNS `-7.04375 ns`, TNS
+`-647.88482 ns`, and `280` violations. Hold still passed with zero violations.
+The worst path again starts at `input_frontend.loaded_bank/_098_/Q`; the four
+selector banks added enough physical replication/congestion to make the real
+flow worse than the `2bf7f369` baseline.
+
+**Decision:** Reject the four-selector implementation for physical closure.
+Share the eight early decoders in two selector banks, with each bank feeding
+two adjacent 32-bit read slices. This cuts replicated decoder logic while
+retaining the registered candidate inputs, one logical read port, fixed ABI,
+same-edge actions, and pending-first rearm behavior.
+
+**Evidence:** The two-bank RTL passes the full local gate, selector simulation,
+topology check, SAT equivalence, lint, and synthesis. The matched local routed
+screen reports `+0.65 ns` setup WNS, `0 ns` TNS, `+0.03 ns` hold slack, and
+`702,469 µm²` / `78%` utilization, versus the baseline screen's `-0.70 ns`,
+`-6.03 ns`, `+0.01 ns`, and `690,697 µm²`. It still reports global-route
+congestion, so a fresh exact-commit hosted GDS is required.
+
+**Status:** confirmed by Hausen; four-bank candidate rejected; two-bank candidate pending hosted validation

@@ -13,8 +13,8 @@ def main() -> None:
     top = modules["tt_um_chimaera"]
     selectors = [cell for cell in top["cells"].values()
                  if cell["type"] == "chimaera_descriptor_selector"]
-    if len(selectors) != 4:
-        raise SystemExit(f"Expected four separate descriptor selectors, found {len(selectors)}")
+    if len(selectors) != 2:
+        raise SystemExit(f"Expected two shared descriptor selectors, found {len(selectors)}")
     selector = modules["chimaera_descriptor_selector"]
     decoders = [cell for cell in selector["cells"].values()
                 if cell["type"] == "chimaera_descriptor_decoder"]
@@ -52,17 +52,17 @@ def main() -> None:
         if len(bits) != 32 or not all(isinstance(bit, int) for bit in bits):
             raise SystemExit("Descriptor selector did not retain all 32 row selects")
         output_bits.extend(bits)
-    if len(set(output_bits)) != 4 * 32:
+    if len(set(output_bits)) != 2 * 32:
         raise SystemExit("Descriptor selectors share row-select nets")
     maximum = max(fanout[bit] for bit in output_bits)
-    if maximum > 32:
-        raise SystemExit(f"Descriptor row-select fanout {maximum} exceeds 32")
+    if maximum > 64:
+        raise SystemExit(f"Descriptor row-select fanout {maximum} exceeds 64")
     for name in ("chimaera_descriptor_decoder", "chimaera_descriptor_selector"):
         if any("DFF" in cell["type"].upper() or "LATCH" in cell["type"].upper() or
                "CLK" in cell["connections"]
                for cell in modules[name]["cells"].values()):
             raise SystemExit(f"{name} contains storage")
-    print(f"PASS: four local selectors, eight early decoders each, max row-select fanout {maximum}, no added storage")
+    print(f"PASS: two shared selectors, eight early decoders each, max row-select fanout {maximum}, no added storage")
 
     root = Path(__file__).resolve().parents[1]
     source = root / "src/chimaera_program_loader.v"

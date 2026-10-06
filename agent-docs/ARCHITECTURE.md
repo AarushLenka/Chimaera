@@ -121,14 +121,16 @@ document):
   physical buffer; if implemented separately, log why in `decisions.md`).
 - A few bytes of mailbox storage.
 
-The descriptor read is combinational and selects one logical row. Each of four
-32-bit read slices decodes eight registered candidate state IDs in parallel:
-event, alternate, timeout, and pending successors for each context. The late
-branch/timeout decisions and pending-first context winner then select an already
-decoded row. This removes binary successor/address multiplexers followed by row
-decoding from the event path. Decoder and selector hierarchy is retained through
+The descriptor read is combinational and selects one logical row. Two selector
+banks each decode eight registered candidate state IDs in parallel: event,
+alternate, timeout, and pending successors for each context. Each bank feeds
+two adjacent 32-bit read slices. The late branch/timeout decisions and
+pending-first context winner then select an already decoded row. This removes
+binary successor/address multiplexers followed by row decoding from the event
+path while limiting decoder replication; each final row select drives at most
+64 data-bit loads. Decoder and selector hierarchy is retained through
 technology mapping; storage and read-data logic can still optimize across the
-top-level boundary, and each final row select drives at most 32 data-bit loads.
+top-level boundary.
 
 The runtime's binary `descriptor_address` remains an observation/checking signal;
 the physical read receives the registered candidates and late decision bits
