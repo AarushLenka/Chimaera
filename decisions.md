@@ -879,3 +879,78 @@ screen reports `+0.65 ns` setup WNS, `0 ns` TNS, `+0.03 ns` hold slack, and
 congestion, so a fresh exact-commit hosted GDS is required.
 
 **Status:** confirmed by Hausen; four-bank candidate rejected; two-bank candidate pending hosted validation
+
+## 2026-10-07 — Hold production and isolate per-context descriptor reads
+
+**Context:** The exact hosted GDS run for the current two-bank production
+candidate completed as workflow `37508588226`. Its worst slow-corner path
+contains `loaded_runtime.select_request_1` at `15.292 ns`, then the shared
+descriptor selector/read network, and arrives at the endpoint at `27.560 ns`.
+
+**Decision:** Keep the production RTL and its 20 ns clock, 32 × 128-bit
+descriptor ABI, pending-first grant equations, same-edge actions, and existing
+rearm schedule unchanged. Evaluate the proposed two-combinational-read
+topology only as an isolated candidate: each context owns event, alternate,
+timeout, and pending successor selection, while the existing arbiter controls
+only `load_0` and `load_1`. Retain two 64-bit selector banks per context and
+require a full integrated implementation before any adoption decision.
+
+**Evidence:** The isolated read prototype passes 128 full-width decision
+patterns and the reload-data SAT proof. Its IHP mapped read-cone screen rises
+from `48,092` to `81,278 µm²` (`+33,185 µm²`); this is not a full-design area
+or routed result. The exact production artifact identifies commit
+`dc2287144c0042ecdfc21a243ac17d616a9dcac0` and reports slow setup WNS
+`-6.7110816581 ns`, TNS `-1086.7175058528 ns`, and `281` setup violations;
+hold WNS/TNS are `0`. DRC, LVS, antenna, and power-grid checks are clean, but
+the timing gate is unmet.
+
+**Consequences:** No production RTL, workflow, commit, or push changes are
+made by this evaluation. The candidate must next be integrated through both
+runtime buses, prove full reload/action equivalence, pass the complete local
+gate, and receive an exact-commit hosted report with positive slow-corner WNS,
+zero setup TNS/violations, clean hold/signoff, and 24-tile fit before it can
+replace production.
+
+**Status:** proposed isolated candidate; production held; Phase 7 open
+
+## 2026-10-07 — Accept the local functional gate; hold physical adoption
+
+**Context:** The isolated two-combinational-read topology was integrated
+through both runtime buses without changing production RTL, the 20 ns clock,
+the 32 × 128-bit descriptor ABI, same-edge actions, or pending-first rearm
+behavior. The replay generator now selects the candidate read interface only
+when an alternate source root is requested; the default production interface
+remains unchanged.
+
+**Evidence:** The candidate gate passed 30 host tests, all five Phase 6 demos,
+the adapted loader/host/fault benches, a 528-case per-context selector bench,
+the integrated runtime bench, Phase 4 smoke, strict Verilator lint, Yosys
+synthesis, topology inspection, and the two-private-bus SAT proof. The
+clock-by-clock production/candidate miter passed 260 cycles while observing
+`54` simultaneous fires, `54` deferred reloads, `160` timeouts, both branch
+outcomes (`205` true / `64` false), `106` dynamic-selector cases, and `244`
+saturated-run cycles. It compared the external action/fault/contract outputs
+plus pending state, active controls, cell state/timers/actions, and shift/count
+state after every edge.
+
+The mapped candidate retains four context selector banks with four early
+decoders each; row-select nets remain distinct and max at fanout `64`, while
+candidate addresses are register-driven and no cross-context grant enters the
+loader selector. The remaining arbitration-to-load path is still visible in
+the runtime equations; local structural evidence cannot determine its routed
+delay. The matched full-top generic Yosys+ABC screen is `32,633` production
+cells versus `40,369` candidate cells (`+7,736`, `+23.71%`). This is a generic
+screening count only, not physical area.
+
+**Decision:** Accept the candidate as locally functionally equivalent and keep
+it isolated for physical evaluation. Do not replace production based on this
+gate or the generic area count. A future exact-commit hosted run must establish
+positive slow-corner setup WNS, zero setup TNS/violations, clean hold and
+electrical/signoff reports, and 24-tile fit before any adoption decision.
+
+**Consequences:** The production source tree, workflow files, commit history,
+and remote state remain unchanged. The isolated candidate has no hosted GDS,
+routed timing, utilization, DRC/LVS, antenna, or tile-fit evidence; Phase 7
+remains open.
+
+**Status:** locally functionally proven; physical adoption deferred

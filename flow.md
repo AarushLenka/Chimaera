@@ -724,3 +724,58 @@ global-route screen reports WNS `+0.65 ns`, TNS `0 ns`, hold `+0.03 ns`, and
 congestion and is not signoff evidence. Commit and hosted rerun this two-bank
 candidate before making any Phase 7 closure claim; precheck for `37435108709`
 remains separate and was still running when these metrics were reported.
+
+## 2026-10-07 — Keep production unchanged while evaluating independent reads
+
+The exact hosted run for `dc2287144c0042ecdfc21a243ac17d616a9dcac0` completed
+successfully at the workflow level, but its final slow-corner report rejected
+the current shared-read production candidate: WNS was `-6.7110816581 ns`, TNS
+was `-1086.7175058528 ns`, and there were `281` setup violations. Hold was
+clean, as were the final DRC, LVS, antenna, and power-grid checks. The critical
+routed path shows `select_request_1` at `15.292 ns`, followed by the shared
+selector/read network and an endpoint arrival at `27.560 ns`.
+
+The isolated `/tmp/chimaera-read-diagnosis.xclGdS` prototype was rechecked. Its
+simulation passed all 128 decision patterns, and the Yosys SAT miter proved
+reload-data equivalence. The mapped read-cone comparison is `48,092 → 81,278
+µm²`, or `+33,185 µm²`, which remains screening evidence because it does not
+include the integrated runtime or routing. Production RTL remains unchanged.
+The next candidate checkpoint is a full runtime integration and local gate
+before any commit or hosted physical run; Phase 7 remains open.
+
+## 2026-10-07 — Complete the isolated two-read runtime gate
+
+The independent-read candidate under `experiments/two_read_runtime/` now has a
+full local gate. `bash experiments/two_read_runtime/local-verify.sh` passed all
+30 host tests, all five Phase 6 demos against the candidate source root, the
+candidate loader/host/fault benches, the per-context selector bench, the full
+runtime bench, the production-vs-candidate runtime miter, the Phase 4 smoke
+test, strict Verilator lint, Yosys synthesis, topology checks, and the SAT
+read-equivalence proof. The production Phase 6 demo replay also remained green
+after the replay generator learned the candidate's two-bus interface.
+
+The runtime miter compares outputs and internal pending/active/cell/shift state
+on every cycle for 260 cycles. Its deterministic directed plus saturated
+stimulus recorded `54` simultaneous fires, `54` deferred reloads, `160`
+timeout fires, `205` true and `64` false branch fires, `106` dynamic-selector
+fires, and `244` saturated-run cycles. This proves behavioral equivalence for
+the exercised runtime state and action/rearm cases; it is not a formal proof
+over all sequential traces.
+
+The candidate netlist retains four context selector banks, four early decoders
+per bank, 128 distinct row-select nets, and maximum row-select fanout `64`.
+All candidate address inputs are register-driven, the selector module has no
+storage, the SAT miter proves both private 128-bit buses equal the corresponding
+production context read for arbitrary decisions and descriptor data, and the
+topology check confirms cross-context arbitration is absent from the loader.
+The remaining arbitration is still structurally present only in the runtime's
+`service_0`/`select_request_1` to `load_0`/`load_1` path. No routed report was
+available to quantify whether that path is the next physical bottleneck.
+
+Using one identical full-top Yosys proc/opt/memory-map/techmap/flatten plus
+ABC(simple) and `stat` flow, production maps to `32,633` generic cells and the
+candidate to `40,369`, a `+7,736` / `+23.71%` screening increase. These are
+generic mapped-cell counts, not IHP area, utilization, slack, congestion, or
+signoff evidence. Production RTL and workflow files remain unchanged; nothing
+was committed or pushed. The candidate is functionally locally proven but is
+not adopted and still requires an exact-commit hosted physical comparison.

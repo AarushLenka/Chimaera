@@ -22,7 +22,12 @@ def _check_byte(value: int, name: str) -> int:
     return value
 
 
-def _testbench(program: PackedProgram, trace: Sequence[ReplayCycle]) -> str:
+def _testbench(
+    program: PackedProgram,
+    trace: Sequence[ReplayCycle],
+    *,
+    two_read: bool = False,
+) -> str:
     if not trace:
         raise ValueError("RTL replay requires at least one trace cycle")
     if len(program.context_entries) not in {1, 2}:
@@ -69,6 +74,68 @@ def _testbench(program: PackedProgram, trace: Sequence[ReplayCycle]) -> str:
     entry_1 = program.context_entries[1] if len(program.context_entries) == 2 else 0
     context_enable = 0x3 if len(program.context_entries) == 2 else 0x1
     trace_count = len(trace)
+    if two_read:
+        read_declarations = """  wire [39:0] descriptor_candidates;
+  wire [5:0] descriptor_decision;
+  wire [4095:0] descriptor_words;
+  wire [255:0] descriptor_data;
+  wire [31:0] descriptor_select_row_0;
+  wire [31:0] descriptor_select_row_1;
+  genvar row;
+  generate
+    for (row = 0; row < 32; row = row + 1) begin : pack_descriptors
+      assign descriptor_words[row*128 +: 128] = descriptor_memory[row];
+    end
+  endgenerate
+  chimaera_context_selector descriptor_selector_0 (
+      .candidates(descriptor_candidates[19:0]),
+      .pending(descriptor_decision[4]),
+      .fire_timeout(descriptor_decision[2]),
+      .branch_condition(descriptor_decision[0]),
+      .select_row(descriptor_select_row_0)
+  );
+  chimaera_context_selector descriptor_selector_1 (
+      .candidates(descriptor_candidates[39:20]),
+      .pending(descriptor_decision[5]),
+      .fire_timeout(descriptor_decision[3]),
+      .branch_condition(descriptor_decision[1]),
+      .select_row(descriptor_select_row_1)
+  );
+  chimaera_descriptor_read_slice #(.READ_WIDTH(128), .USE_SHARED_SELECT(1)) descriptor_reader_0 (
+      .candidates(40'b0), .decision(7'b0),
+      .shared_select_row(descriptor_select_row_0),
+      .words(descriptor_words), .data(descriptor_data[127:0])
+  );
+  chimaera_descriptor_read_slice #(.READ_WIDTH(128), .USE_SHARED_SELECT(1)) descriptor_reader_1 (
+      .candidates(40'b0), .decision(7'b0),
+      .shared_select_row(descriptor_select_row_1),
+      .words(descriptor_words), .data(descriptor_data[255:128])
+  );"""
+        runtime_read_ports = """      .descriptor_candidates(descriptor_candidates),
+      .descriptor_decision(descriptor_decision),
+      .descriptor_data(descriptor_data),"""
+    else:
+        read_declarations = """  wire [4:0] descriptor_address;
+  wire [39:0] descriptor_candidates;
+  wire [6:0] descriptor_decision;
+  wire [4095:0] descriptor_words;
+  wire [127:0] descriptor_data;
+  genvar row;
+  generate
+    for (row = 0; row < 32; row = row + 1) begin : pack_descriptors
+      assign descriptor_words[row*128 +: 128] = descriptor_memory[row];
+    end
+  endgenerate
+  chimaera_descriptor_read_slice #(.READ_WIDTH(128)) descriptor_reader (
+      .candidates(descriptor_candidates),
+      .decision(descriptor_decision),
+      .words(descriptor_words),
+      .data(descriptor_data)
+  );"""
+        runtime_read_ports = """      .descriptor_address(descriptor_address),
+      .descriptor_candidates(descriptor_candidates),
+      .descriptor_decision(descriptor_decision),
+      .descriptor_data(descriptor_data),"""
     return f'''`default_nettype none
 `timescale 1ns / 1ps
 
@@ -89,23 +156,7 @@ module chimaera_generated_replay_tb;
   reg [127:0] contract_config_0 = 128'h{program.contract_config[0]:032x};
   reg [127:0] contract_config_1 = 128'h{program.contract_config[1]:032x};
   reg [127:0] descriptor_memory [0:31];
-  wire [4:0] descriptor_address;
-  wire [39:0] descriptor_candidates;
-  wire [6:0] descriptor_decision;
-  wire [4095:0] descriptor_words;
-  wire [127:0] descriptor_data;
-  genvar row;
-  generate
-    for (row = 0; row < 32; row = row + 1) begin : pack_descriptors
-      assign descriptor_words[row*128 +: 128] = descriptor_memory[row];
-    end
-  endgenerate
-  chimaera_descriptor_read_slice #(.READ_WIDTH(128)) descriptor_reader (
-      .candidates(descriptor_candidates),
-      .decision(descriptor_decision),
-      .words(descriptor_words),
-      .data(descriptor_data)
-  );
+{read_declarations}
   wire [7:0] drive_value_0;
   wire [7:0] drive_enable_0;
   wire [7:0] drive_value_1;
@@ -128,10 +179,7 @@ module chimaera_generated_replay_tb;
       .context_enable(context_enable),
       .context_entry_0(context_entry_0),
       .context_entry_1(context_entry_1),
-      .descriptor_address(descriptor_address),
-      .descriptor_candidates(descriptor_candidates),
-      .descriptor_decision(descriptor_decision),
-      .descriptor_data(descriptor_data),
+{runtime_read_ports}
       .sync_inputs(sync_inputs),
       .rise_edges(rise_edges),
       .fall_edges(fall_edges),
@@ -203,7 +251,7 @@ def run_runtime_replay(
     keeping asynchronous pin synchronization outside this host-side test.
     """
 
-    root = source_root or Path(__file__).resolve().parents[1]
+    root = (source_root or Path(__file__).resolve().parents[1]).resolve()
     source_dir = root / "src"
     sources = [
         source_dir / "chimaera_reaction_cell.v",
@@ -221,7 +269,10 @@ def run_runtime_replay(
             temp_dir = Path(directory)
             testbench = temp_dir / "replay_tb.v"
             simulator = temp_dir / "replay.vvp"
-            testbench.write_text(_testbench(program, trace), encoding="utf-8")
+            testbench.write_text(
+                _testbench(program, trace, two_read=source_root is not None),
+                encoding="utf-8",
+            )
             compile_result = subprocess.run(
                 [
                     "iverilog",

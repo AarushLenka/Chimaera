@@ -16,6 +16,7 @@ from chimaera import ChipReferenceModel, Compilation, compile_source, run_runtim
 
 CLOCK_HZ = 50_000_000
 EXAMPLES = ROOT / "examples"
+_REPLAY_SOURCE_ROOT: Path | None = None
 
 
 def _compile(
@@ -43,9 +44,12 @@ def _compile(
 def _replay(
     compilation: Compilation,
     inputs: Iterable[int],
+    *,
+    source_root: Path | None = None,
 ) -> list:
     """Replay synchronized inputs and compare every cycle with generated RTL."""
 
+    source_root = source_root or _REPLAY_SOURCE_ROOT
     model = ChipReferenceModel(compilation)
     previous = 0
     results = []
@@ -69,7 +73,11 @@ def _replay(
         )
         previous = value
     assert compilation.packed_program is not None
-    output = run_runtime_replay(compilation.packed_program, rtl_trace)
+    output = run_runtime_replay(
+        compilation.packed_program,
+        rtl_trace,
+        source_root=source_root,
+    )
     if "PASS: generated runtime replay" not in output:
         raise AssertionError(output)
     return results
@@ -270,7 +278,11 @@ def demo_new_protocol_and_transducers() -> None:
     print("PASS demo 5: new wire protocol plus translation and firewall policy")
 
 
-def main() -> int:
+def main(source_root: Path | None = None) -> int:
+    # Keep the default production gate unchanged, while allowing the same
+    # model-vs-RTL replay to be run against an isolated source tree.
+    global _REPLAY_SOURCE_ROOT
+    _REPLAY_SOURCE_ROOT = source_root
     demo_basic_compliance()
     demo_i2c_sensor()
     demo_spi_identity_rewrite()
@@ -281,4 +293,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--source-root",
+        type=Path,
+        help="RTL source root to use for generated runtime replays",
+    )
+    args = parser.parse_args()
+    raise SystemExit(main(args.source_root))
