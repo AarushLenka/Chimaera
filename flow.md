@@ -813,3 +813,14 @@ the hosted AREA 0 synthesis settings are running under
 `/tmp/chimaera-two-read-pnr.Od9KEg/`; Phase 7 remains open. The next remote run
 must use the production source fix and be checked by commit identity and final
 metrics. No workflow or clock configuration was changed.
+
+The production source change and local gates are committed as `7d6e04c`.
+The additional `AREA 0` map reports `567788.1300 µm²` and passes the mapped
+topology checks. Functional gate-level simulation with the fixed-PDK IHP cell
+models passes the top-level serial load, commit/resume, event-action, and
+timeout bench at 20 ns, without delay annotation. This map reaches CTS/hold
+repair at `724978 µm²`, `81%` utilization, setup `+3.97 ns`, hold `+0.10 ns`,
+and setup TNS `0`; its global routing remains in progress. The first map's
+detailed route is also still running. The local containers and evidence are
+retained at the path above. Hosted verification awaits explicit push approval
+under `agent-docs/AGENTS.md` §9. No push has been made.

@@ -1007,6 +1007,18 @@ Both screens warn about congestion. These are comparative local screens with
 LibreLane 3.0.14/OpenROAD, not the hosted 3.1.0.dev3 flow or full signoff.
 Reports and scripts are retained in `/tmp/chimaera-two-read-pnr.Od9KEg/`.
 
+A second map using the retained hosted `AREA 0` synthesis configuration with
+local LibreLane 3.0.14 reports area `567788.1300 µm²`. Its mapped topology
+checks pass, including the maximum row-select fanout of `64`. The mapped IHP
+netlist passes `phase5_loader_top_tb` with the fixed-PDK functional cell models:
+serial loading, commit/resume, event action, and timeout all pass at 20 ns.
+This is functional gate-level simulation without extracted delays. After
+placement this screen reports `605150 µm²` and `67%` utilization; after
+CTS/hold repair it reports `724978 µm²`, `81%` utilization, setup `+3.97 ns`,
+hold `+0.10 ns`, and setup TNS `0`. Global routing for this map and detailed
+routing/extraction for the first map are still running. No extracted timing
+or final signoff pass is inferred from these intermediate measurements.
+
 **Consequences:** The next GDS build will exercise the private reads. Production
 verification is green; detailed-route/extracted screening is in progress.
 Exact-commit hosted setup/hold, electrical constraints, DRC/LVS, antenna, and
