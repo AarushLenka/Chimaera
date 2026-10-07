@@ -13,8 +13,8 @@ module chimaera_host_interface (
     output wire         cfg_active,
 
     input  wire [39:0]  descriptor_candidates,
-    input  wire [6:0]   descriptor_decision,
-    output wire [127:0] descriptor_data,
+    input  wire [5:0]   descriptor_decision,
+    output wire [255:0] descriptor_data,
     output wire [4:0]   context_entry_0,
     output wire [4:0]   context_entry_1,
     output wire [1:0]   context_enable,

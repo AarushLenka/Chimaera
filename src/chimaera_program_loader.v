@@ -25,9 +25,40 @@ module chimaera_descriptor_decoder (
   endgenerate
 endmodule
 
+// One context's private descriptor selection. Decodes that context's four
+// registered candidate addresses (event, alternate, timeout, pending) and
+// applies only that context's own late decisions, in the production successor
+// priority: pending, timeout, branch, then alternate. No cross-context
+// arbitration signal exists on this path.
+(* keep_hierarchy = "yes" *)
+module chimaera_context_selector (
+    input  wire [19:0] candidates,
+    input  wire        pending,
+    input  wire        fire_timeout,
+    input  wire        branch_condition,
+    output wire [31:0] select_row
+);
+  wire [31:0] decoded [0:3];
+  genvar candidate;
+  generate
+    for (candidate = 0; candidate < 4; candidate = candidate + 1) begin : decode_candidate
+      (* keep = "true", keep_hierarchy = "yes" *)
+      chimaera_descriptor_decoder decoder (
+          .address(candidates[candidate*5 +: 5]),
+          .select_row(decoded[candidate])
+      );
+    end
+  endgenerate
+  // Candidates: event/alternate/timeout/pending successors for this context.
+  assign select_row = pending ? decoded[3] :
+      fire_timeout ? decoded[2] : branch_condition ? decoded[0] : decoded[1];
+endmodule
+
 // Decode stable successor candidates before late event/arbitration decisions.
 // Preserve both boundaries: ABC may optimize each decoder and the selector,
 // but cannot turn the path back into binary muxes followed by a row decoder.
+// Retained for the standalone read-slice proof benches and the production
+// shared-read reference used by the equivalence miter.
 (* keep_hierarchy = "yes" *)
 module chimaera_descriptor_selector (
     input  wire [39:0] candidates,
@@ -121,8 +152,8 @@ module chimaera_program_loader (
     input  wire [31:0]  frame_data,
 
     input  wire [39:0]  descriptor_candidates,
-    input  wire [6:0]   descriptor_decision,
-    output wire [127:0] descriptor_data,
+    input  wire [5:0]   descriptor_decision,
+    output wire [255:0] descriptor_data,
 
     output reg  [4:0]   context_entry_0,
     output reg  [4:0]   context_entry_1,
@@ -170,39 +201,46 @@ module chimaera_program_loader (
   wire [15:0] frame_payload = frame_data[15:0];
   wire [5:0]  commit_count = {1'b0, frame_address} + 6'd1;
 
-  // Partition only the read logic; the 32 x 128-bit storage and write port are
-  // shared. Two selectors feed two adjacent slices each, reducing replicated
-  // decoder area while keeping each row-select fanout bounded.
+  // Two independent per-context read buses share the 32 x 128-bit storage
+  // and its single write port. Each context owns
+  // two 32-bit-row selector banks (four early decoders each); every bank feeds
+  // two adjacent 32-bit slices of that context's bus, keeping row-select
+  // fanout bounded. The pending-first grants (load_0/load_1) live in the
+  // runtime and never select descriptor data.
+  genvar context_index;
+  genvar bank;
   genvar slice;
   genvar descriptor;
-  wire [31:0] select_row_group [0:1];
+  wire [31:0] context_select_row [0:3];
   generate
-    for (slice = 0; slice < 2; slice = slice + 1) begin : read_selector
-      (* keep = "true", keep_hierarchy = "yes" *)
-      chimaera_descriptor_selector selector (
-          .candidates(descriptor_candidates),
-          .decision(descriptor_decision),
-          .select_row(select_row_group[slice])
-      );
-    end
-  endgenerate
-  generate
-    for (slice = 0; slice < 128/DESCRIPTOR_READ_WIDTH; slice = slice + 1) begin : read_slice
-      wire [32*DESCRIPTOR_READ_WIDTH-1:0] slice_words;
-      for (descriptor = 0; descriptor < 32; descriptor = descriptor + 1) begin : pack_words
-        assign slice_words[descriptor*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH] =
-            descriptor_memory[descriptor][slice*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH];
+    for (context_index = 0; context_index < 2; context_index = context_index + 1) begin : context_read
+      for (bank = 0; bank < 2; bank = bank + 1) begin : selector_bank
+        (* keep = "true", keep_hierarchy = "yes" *)
+        chimaera_context_selector selector (
+            .candidates(descriptor_candidates[context_index*20 +: 20]),
+            .pending(descriptor_decision[context_index+4]),
+            .fire_timeout(descriptor_decision[context_index+2]),
+            .branch_condition(descriptor_decision[context_index]),
+            .select_row(context_select_row[context_index*2+bank])
+        );
       end
-      chimaera_descriptor_read_slice #(
-          .READ_WIDTH(DESCRIPTOR_READ_WIDTH),
-          .USE_SHARED_SELECT(1)
-      ) reader (
-          .candidates(40'b0),
-          .decision(7'b0),
-          .shared_select_row(select_row_group[slice/2]),
-          .words(slice_words),
-          .data(descriptor_data[slice*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH])
-      );
+      for (slice = 0; slice < 128/DESCRIPTOR_READ_WIDTH; slice = slice + 1) begin : read_slice
+        wire [32*DESCRIPTOR_READ_WIDTH-1:0] slice_words;
+        for (descriptor = 0; descriptor < 32; descriptor = descriptor + 1) begin : pack_words
+          assign slice_words[descriptor*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH] =
+              descriptor_memory[descriptor][slice*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH];
+        end
+        chimaera_descriptor_read_slice #(
+            .READ_WIDTH(DESCRIPTOR_READ_WIDTH),
+            .USE_SHARED_SELECT(1)
+        ) reader (
+            .candidates(40'b0),
+            .decision(7'b0),
+            .shared_select_row(context_select_row[context_index*2+slice/2]),
+            .words(slice_words),
+            .data(descriptor_data[context_index*128 + slice*DESCRIPTOR_READ_WIDTH +: DESCRIPTOR_READ_WIDTH])
+        );
+      end
     end
   endgenerate
   assign load_in_progress = load_active;

@@ -7,7 +7,7 @@ module fault_loader_tb;
   reg frame_strobe = 1'b0;
   reg [31:0] frame_data = 32'h00000000;
   reg [4:0] descriptor_address = 5'd0;
-  wire [127:0] descriptor_data;
+  wire [255:0] descriptor_data;
   wire [4:0] context_entry_0;
   wire [4:0] context_entry_1;
   wire [1:0] context_enable;
@@ -30,7 +30,7 @@ module fault_loader_tb;
       .frame_strobe(frame_strobe),
       .frame_data(frame_data),
       .descriptor_candidates({8{descriptor_address}}),
-      .descriptor_decision(7'd0),
+      .descriptor_decision(6'd0),
       .descriptor_data(descriptor_data),
       .context_entry_0(context_entry_0),
       .context_entry_1(context_entry_1),

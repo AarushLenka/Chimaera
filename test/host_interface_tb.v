@@ -10,7 +10,9 @@ module host_interface_tb;
   reg [4:0] descriptor_address = 5'd0;
   wire cfg_miso;
   wire cfg_active;
-  wire [127:0] descriptor_data;
+  wire [255:0] descriptor_data;
+  wire [127:0] descriptor_data_0 = descriptor_data[127:0];
+  wire [127:0] descriptor_data_1 = descriptor_data[255:128];
   wire [4:0] context_entry_0;
   wire [4:0] context_entry_1;
   wire [1:0] context_enable;
@@ -35,7 +37,7 @@ module host_interface_tb;
       .cfg_miso(cfg_miso),
       .cfg_active(cfg_active),
       .descriptor_candidates({8{descriptor_address}}),
-      .descriptor_decision(7'd0),
+      .descriptor_decision(6'd0),
       .descriptor_data(descriptor_data),
       .context_entry_0(context_entry_0),
       .context_entry_1(context_entry_1),
@@ -115,8 +117,9 @@ module host_interface_tb;
     end
     descriptor_address = 5'd0;
     #1;
-    if (descriptor_data !== 128'h0100_0001_0810_1010_1000_0000_0000_0009) begin
-      $display("FAIL: serial descriptor readback %032h", descriptor_data);
+    if (descriptor_data_0 !== 128'h0100_0001_0810_1010_1000_0000_0000_0009 ||
+        descriptor_data_1 !== 128'h0100_0001_0810_1010_1000_0000_0000_0009) begin
+      $display("FAIL: serial descriptor readback c0=%032h c1=%032h", descriptor_data_0, descriptor_data_1);
       $fatal(1);
     end
 

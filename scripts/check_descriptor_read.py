@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Check that local decoders survive synthesis and prove indexed-read equivalence."""
+"""Check the production two-read netlist and prove each private read bus."""
+
+from __future__ import annotations
 
 from collections import Counter
 import json
@@ -8,77 +10,127 @@ import subprocess
 import sys
 
 
-def main() -> None:
-    modules = json.loads(Path(sys.argv[1]).read_text())["modules"]
+def _check_structure(netlist: Path, source_root: Path) -> None:
+    modules = json.loads(netlist.read_text())["modules"]
     top = modules["tt_um_chimaera"]
     selectors = [cell for cell in top["cells"].values()
-                 if cell["type"] == "chimaera_descriptor_selector"]
-    if len(selectors) != 2:
-        raise SystemExit(f"Expected two shared descriptor selectors, found {len(selectors)}")
-    selector = modules["chimaera_descriptor_selector"]
+                 if cell["type"] == "chimaera_context_selector"]
+    if len(selectors) != 4:
+        raise SystemExit(f"Expected four retained context selector banks, found {len(selectors)}")
+    selector = modules["chimaera_context_selector"]
     decoders = [cell for cell in selector["cells"].values()
                 if cell["type"] == "chimaera_descriptor_decoder"]
-    if len(decoders) != 8:
-        raise SystemExit(f"Expected eight candidate decoders per selector, found {len(decoders)}")
-    # Late decisions cannot enter any decoder: its address must consist only of
-    # candidate input bits, structurally forbidding binary arbitration first.
+    if len(decoders) != 4:
+        raise SystemExit(f"Expected four early decoders per context selector, found {len(decoders)}")
     candidate_bits = set(selector["ports"]["candidates"]["bits"])
     for decoder in decoders:
         if not set(decoder["connections"]["address"]).issubset(candidate_bits):
-            raise SystemExit("Late decision logic entered a candidate decoder")
+            raise SystemExit("A late decision entered a context decoder address")
 
-    # In the full design every candidate address is already registered; input
-    # events must not acquire an indirect path into the early address decoders.
     registered_bits = set()
     for cell in top["cells"].values():
-        if "port_directions" not in cell:
-            raise SystemExit("Netlist lacks cell port directions; read_liberty -lib before write_json")
-        if "CLK" in cell["connections"] or "C" in cell["connections"]:
-            if "Q" in cell["connections"] and cell["port_directions"]["Q"] == "output":
-                registered_bits.update(cell["connections"]["Q"])
-    for read_selector in selectors:
-        if not set(read_selector["connections"]["candidates"]).issubset(registered_bits):
-            raise SystemExit("A candidate address is not driven directly by a register")
+        if cell.get("connections") and "port_directions" not in cell:
+            raise SystemExit("Netlist lacks cell directions; read_liberty -lib before write_json")
+        directions = cell.get("port_directions", {})
+        if ("Q" in cell.get("connections", {}) and
+                directions.get("Q") == "output" and
+                ("CLK" in cell.get("connections", {}) or
+                 "C" in cell.get("connections", {}))):
+            registered_bits.update(cell["connections"]["Q"])
+    for selector_cell in selectors:
+        if not set(selector_cell["connections"]["candidates"]).issubset(registered_bits):
+            raise SystemExit("A descriptor candidate address is not register-driven")
+
+    # Check the integrated manifest-selected top, not just selector source text:
+    # every late input must be that context's own runtime signal.
+    for cell_name, cell in top["cells"].items():
+        if cell["type"] != "chimaera_context_selector":
+            continue
+        contexts = [index for index in range(2)
+                    if f"context_read[{index}]" in cell_name]
+        if len(contexts) != 1:
+            raise SystemExit(f"Unrecognized context selector: {cell_name}")
+        context = contexts[0]
+        for port in ("pending", "fire_timeout", "branch_condition"):
+            aliases = [f"loaded_runtime.{port}_{context}"]
+            if port == "fire_timeout":
+                # opt_clean -purge can retain the execution-engine port name
+                # instead of the runtime wire's equivalent alias.
+                aliases.append(f"loaded_runtime.execution_engine.fire_timeout_{context}")
+            names = [name for name in aliases if name in top["netnames"]]
+            if not names:
+                raise SystemExit(f"Missing runtime net for context {context} {port}")
+            expected = top["netnames"][names[0]]["bits"]
+            if cell["connections"][port] != expected:
+                raise SystemExit(f"{cell_name}.{port} is not context-local")
 
     fanout: Counter[int] = Counter()
     for cell in top["cells"].values():
-        for port, bits in cell["connections"].items():
-            if cell["port_directions"][port] == "input":
+        for port, bits in cell.get("connections", {}).items():
+            if cell.get("port_directions", {}).get(port) == "input":
                 fanout.update(bit for bit in bits if isinstance(bit, int))
-
-    output_bits = []
-    for read_selector in selectors:
-        bits = read_selector["connections"]["select_row"]
-        if len(bits) != 32 or not all(isinstance(bit, int) for bit in bits):
-            raise SystemExit("Descriptor selector did not retain all 32 row selects")
-        output_bits.extend(bits)
-    if len(set(output_bits)) != 2 * 32:
-        raise SystemExit("Descriptor selectors share row-select nets")
-    maximum = max(fanout[bit] for bit in output_bits)
+    row_select_bits = []
+    for selector_cell in selectors:
+        rows = selector_cell["connections"]["select_row"]
+        if len(rows) != 32 or not all(isinstance(bit, int) for bit in rows):
+            raise SystemExit("A context selector did not retain 32 row-select outputs")
+        row_select_bits.extend(rows)
+    if len(set(row_select_bits)) != 4 * 32:
+        raise SystemExit("Context selector row-select outputs were merged")
+    maximum = max(fanout[bit] for bit in row_select_bits)
     if maximum > 64:
         raise SystemExit(f"Descriptor row-select fanout {maximum} exceeds 64")
-    for name in ("chimaera_descriptor_decoder", "chimaera_descriptor_selector"):
+    for name in ("chimaera_context_selector", "chimaera_descriptor_decoder"):
         if any("DFF" in cell["type"].upper() or "LATCH" in cell["type"].upper() or
-               "CLK" in cell["connections"]
+               "CLK" in cell.get("connections", {})
                for cell in modules[name]["cells"].values()):
             raise SystemExit(f"{name} contains storage")
-    print(f"PASS: two shared selectors, eight early decoders each, max row-select fanout {maximum}, no added storage")
 
-    root = Path(__file__).resolve().parents[1]
-    source = root / "src/chimaera_program_loader.v"
-    proof = root / "test/descriptor_read_equiv.v"
-    # Remove preservation attributes only in the proof model to let SAT see
-    # every gate. The supplied synthesis JSON above checks the real boundaries.
-    script = (f'read_verilog -sv "{source}" "{proof}"; '
-              'hierarchy -top descriptor_read_equiv; '
-              'setattr -mod -unset keep_hierarchy; setattr -unset keep_hierarchy; '
-              'flatten; prep -top descriptor_read_equiv; '
-              'sat -verify -prove equivalent 1')
-    result = subprocess.run(["yosys", "-Q", "-T", "-q", "-p", script],
-                            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    loader_text = (source_root / "src/chimaera_program_loader.v").read_text()
+    selector_text = loader_text.split("module chimaera_context_selector", 1)[1]
+    if "select_request_1" in selector_text.split("module chimaera_descriptor_selector", 1)[0]:
+        raise SystemExit("Cross-context arbitration entered the context selector source")
+    if "select_request_1" in loader_text:
+        raise SystemExit("Runtime arbitration signal leaked into the loader read network")
+    runtime_text = (source_root / "src/chimaera_program_runtime.v").read_text()
+    for equation in ("wire service_0", "wire select_request_1", "wire load_0", "wire load_1"):
+        if equation not in runtime_text:
+            raise SystemExit(f"Remaining arbitration/load equation missing: {equation}")
+    print(f"PASS: four context selector banks, four decoders each, distinct rows, max row-select fanout {maximum}")
+    print("PASS: mapped selector decisions are context-local; arbitration remains on load_0/load_1")
+
+
+def _prove(source_root: Path, repo_root: Path) -> None:
+    source = source_root / "src/chimaera_program_loader.v"
+    proof = source_root / "test/descriptor_two_read_equiv.v"
+    script = (
+        f'read_verilog -sv "{source}" "{proof}"; '
+        "hierarchy -top descriptor_two_read_equiv; "
+        "setattr -mod -unset keep_hierarchy; setattr -unset keep_hierarchy; "
+        "flatten; prep -top descriptor_two_read_equiv; "
+        "sat -verify -prove equivalent 1"
+    )
+    result = subprocess.run(
+        ["yosys", "-Q", "-T", "-q", "-p", script],
+        cwd=repo_root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
     if result.returncode:
         raise SystemExit(result.stdout)
-    print("PASS: speculative read equals indexed read for all candidates, decisions and data")
+    print("PASS: two private buses equal the shared selector for all decisions and descriptor data")
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: check_descriptor_read.py NETLIST")
+    netlist = Path(sys.argv[1])
+    repo_root = Path(__file__).resolve().parents[1]
+    source_root = repo_root
+    _check_structure(netlist, source_root)
+    _prove(source_root, repo_root)
 
 
 if __name__ == "__main__":

@@ -954,3 +954,64 @@ routed timing, utilization, DRC/LVS, antenna, or tile-fit evidence; Phase 7
 remains open.
 
 **Status:** locally functionally proven; physical adoption deferred
+
+## 2026-10-07 — Put the independent reads on the production GDS path
+
+**Context:** `GDS_logs_231c021` identifies commit
+`231c02136b137af0975a334495217704866eda66`, but its archived production RTL,
+final netlist, and final metrics are byte-identical to `dc22871`. The commit
+added the candidate under `experiments/`; the source manifest still selected
+`src/`. The retained slow setup failure is WNS `-6.7110816581 ns`, TNS
+`-1086.7175058528 ns`, and 281 violations. Its worst path crosses
+`sync_value[4]`, `select_request_1`, the shared descriptor read, and context 1's
+`action_value[5]`. A successful build did not evaluate the candidate.
+
+**Decision:** Hausen requested the work necessary to fix the issue. Integrate
+the two private combinational reads into the manifest-selected loader, host
+interface, runtime, and top. Keep one shared 32 x 128-bit storage array and
+write port, the 20 ns clock, the loader ABI, both fixed-latency action paths,
+and pending-first reload arbitration. The grants select reload enables only;
+each context consumes its own read bus. This supersedes the previous decision
+to hold the candidate exclusively under `experiments/` for physical evaluation.
+
+Freeze the `dc22871` shared-read runtime under `test/reference/`, excluded from
+the production manifest, so the sequential comparison cannot silently compare
+the new implementation against itself. Promote the private-read selector bench
+and universal SAT miter into the production local gate. Check the synthesized
+top's selector inputs against the corresponding context's runtime signals,
+registered addresses, distinct row selects, bounded fanout, and absence of
+added decoder/selector storage. Adapt the original loader/runtime tests and
+default compiler replay to the new internal interface.
+
+**Alternatives considered:** Rerunning the unchanged production sources cannot
+evaluate the remedy. Changing the clock, rearm schedule, memory depth, or
+features does not follow from this diagnosis. Private reads increase data
+selection logic, so their area and routed behavior require measurement.
+
+**Evidence:** The production gate passes 30 host tests, all five Phase 6 demos,
+ten standalone RTL benches, the Phase 4 smoke test, strict Verilator lint,
+synthesis, topology checks, and the universal two-bus read-equivalence proof.
+The runtime reference comparison passes 260 cycles, observing 54 simultaneous
+fires, 54 deferred reloads, 160 timeouts, 205 true/64 false branches, 106 dynamic
+selector cases, and 244 saturated cycles. Six Cocotb pin-level UART/I2C/SPI
+tests also pass at the 20 ns clock. This is exercised sequential equivalence,
+not a universal proof of all sequential traces.
+
+The matched IHP-mapped screen reports `552549.5136 µm²` versus the retained
+shared-read candidate's `521689.2156 µm²` (`+5.92%`), with the same 5,831
+register bits. After CTS/hold repair and global routing, the candidate reports
+area `737374 µm²`, utilization `82%`, setup slack `+2.20 ns`, setup TNS `0`,
+and hold slack `+0.04 ns`. The retained shared-read screen reports area
+`702469 µm²`, utilization `78%`, setup `+0.65 ns`, and hold `+0.03 ns`.
+Both screens warn about congestion. These are comparative local screens with
+LibreLane 3.0.14/OpenROAD, not the hosted 3.1.0.dev3 flow or full signoff.
+Reports and scripts are retained in `/tmp/chimaera-two-read-pnr.Od9KEg/`.
+
+**Consequences:** The next GDS build will exercise the private reads. Production
+verification is green; detailed-route/extracted screening is in progress.
+Exact-commit hosted setup/hold, electrical constraints, DRC/LVS, antenna, and
+tile-fit evidence remain required. Phase 7 is open; no physical closure or
+final area reduction is claimed.
+
+**Status:** authorized by Hausen; implemented and locally verified; physical
+validation in progress

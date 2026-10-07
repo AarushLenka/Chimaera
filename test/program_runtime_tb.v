@@ -16,24 +16,41 @@ module program_runtime_tb;
   reg [127:0] mutation_config_1 = 128'h0;
   reg [127:0] contract_config_0 = 128'h0;
   reg [127:0] contract_config_1 = 128'h0;
-  wire [4:0] descriptor_address;
+  // Diagnostic address of the pending-first winner, retained to check the
+  // original single-reload schedule independently of the new private buses.
+  wire [4:0] descriptor_address = dut.select_request_1 ?
+      dut.request_state_1 : dut.request_state_0;
   wire [39:0] descriptor_candidates;
-  wire [6:0] descriptor_decision;
+  wire [5:0] descriptor_decision;
   reg [127:0] descriptor_memory [0:31];
   wire [4095:0] descriptor_words;
-  wire [127:0] descriptor_data;
+  wire [255:0] descriptor_bus;
+  wire [127:0] descriptor_data = dut.load_1 ?
+      descriptor_bus[255:128] : descriptor_bus[127:0];
   genvar row;
   generate
     for (row = 0; row < 32; row = row + 1) begin : pack_descriptors
       assign descriptor_words[row*128 +: 128] = descriptor_memory[row];
     end
   endgenerate
-  chimaera_descriptor_read_slice #(.READ_WIDTH(128)) reader (
-      .candidates(descriptor_candidates),
-      .decision(descriptor_decision),
-      .words(descriptor_words),
-      .data(descriptor_data)
-  );
+  genvar context_index;
+  generate
+    for (context_index = 0; context_index < 2; context_index = context_index + 1) begin : private_read
+      wire [31:0] select_row;
+      chimaera_context_selector selector (
+          .candidates(descriptor_candidates[context_index*20 +: 20]),
+          .pending(descriptor_decision[context_index+4]),
+          .fire_timeout(descriptor_decision[context_index+2]),
+          .branch_condition(descriptor_decision[context_index]),
+          .select_row(select_row)
+      );
+      chimaera_descriptor_read_slice #(.READ_WIDTH(128), .USE_SHARED_SELECT(1)) reader (
+          .candidates(40'b0), .decision(7'b0), .shared_select_row(select_row),
+          .words(descriptor_words),
+          .data(descriptor_bus[context_index*128 +: 128])
+      );
+    end
+  endgenerate
   wire [7:0] drive_value_0;
   wire [7:0] drive_enable_0;
   wire [7:0] drive_value_1;
@@ -54,10 +71,9 @@ module program_runtime_tb;
       .context_enable(context_enable),
       .context_entry_0(context_entry_0),
       .context_entry_1(context_entry_1),
-      .descriptor_address(descriptor_address),
       .descriptor_candidates(descriptor_candidates),
       .descriptor_decision(descriptor_decision),
-      .descriptor_data(descriptor_data),
+      .descriptor_data(descriptor_bus),
       .sync_inputs(sync_inputs),
       .rise_edges(rise_edges),
       .fall_edges(fall_edges),

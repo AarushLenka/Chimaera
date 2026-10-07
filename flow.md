@@ -779,3 +779,37 @@ generic mapped-cell counts, not IHP area, utilization, slack, congestion, or
 signoff evidence. Production RTL and workflow files remain unchanged; nothing
 was committed or pushed. The candidate is functionally locally proven but is
 not adopted and still requires an exact-commit hosted physical comparison.
+
+## 2026-10-07 — Build the private reads from the production source manifest
+
+Inspection of `GDS_logs_231c021` showed that the last push never changed the
+GDS-selected RTL: its source snapshot, final netlist, and final metrics are
+byte-identical to `dc22871`. It repeats the slow setup failure of `-6.711 ns`
+WNS, `-1086.718 ns` TNS, and 281 violations. The independent-read candidate
+was committed only under `experiments/`; the build continued to consume `src/`.
+
+Hausen requested the work needed to fix the issue. The loader, host interface,
+runtime, and top under `src/` now connect two private combinational descriptor
+buses over the same shared memory and write port. Each bus uses only its own
+context's successor decisions; arbitration remains on reload enables. The
+20 ns clock, 32 x 128-bit loader ABI, same-edge actions, and pending-first rearm
+schedule retain their behavior. The architecture documentation now describes
+the actual topology.
+
+Production verification passes 30 host tests, all five Phase 6 demos, ten
+standalone benches, Phase 4 smoke, strict lint, synthesis, topology inspection,
+and the two-bus universal SAT proof. The original bounded-rearm bench remains,
+and the 260-cycle runtime comparison now uses a frozen shared-read reference
+so adopting the candidate cannot change both sides of that comparison. The
+new context selector bench also checks isolation of selected and unselected
+unknown memory rows. Six Cocotb UART/I2C/SPI pin-level tests pass at 20 ns.
+
+A matched local IHP screen reaches global routing at setup `+2.20 ns`, TNS
+`0`, hold `+0.04 ns`, area `737374 µm²`, and `82%` utilization. The retained
+shared-read screen had `+0.65 ns` setup and `702469 µm²` area. Congestion remains.
+These are comparative screens with different tool versions and flow steps from
+hosted signoff. Detailed-route/extracted timing and an additional screen using
+the hosted AREA 0 synthesis settings are running under
+`/tmp/chimaera-two-read-pnr.Od9KEg/`; Phase 7 remains open. The next remote run
+must use the production source fix and be checked by commit identity and final
+metrics. No workflow or clock configuration was changed.

@@ -26,7 +26,7 @@ def _testbench(
     program: PackedProgram,
     trace: Sequence[ReplayCycle],
     *,
-    two_read: bool = False,
+    two_read: bool = True,
 ) -> str:
     if not trace:
         raise ValueError("RTL replay requires at least one trace cycle")
@@ -270,7 +270,7 @@ def run_runtime_replay(
             testbench = temp_dir / "replay_tb.v"
             simulator = temp_dir / "replay.vvp"
             testbench.write_text(
-                _testbench(program, trace, two_read=source_root is not None),
+                _testbench(program, trace),
                 encoding="utf-8",
             )
             compile_result = subprocess.run(

@@ -56,7 +56,7 @@ iverilog -g2012 \
   "$repo_root/src/chimaera_reaction_cell.v" \
   "$repo_root/src/chimaera_generic_execution_engine.v" \
   "$repo_root/src/chimaera_contract_monitor.v" \
-  "$repo_root/src/chimaera_program_runtime.v" \
+  "$repo_root/test/reference/chimaera_program_runtime_single_read.v" \
   "$candidate_root/src/chimaera_program_loader.v" \
   "$candidate_root/src/chimaera_program_runtime.v" \
   "$candidate_root/test/runtime_equivalence_tb.sv"

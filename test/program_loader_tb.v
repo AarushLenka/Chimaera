@@ -7,7 +7,9 @@ module program_loader_tb;
   reg frame_strobe = 1'b0;
   reg [31:0] frame_data = 32'd0;
   reg [4:0] descriptor_address = 5'd0;
-  wire [127:0] descriptor_data;
+  wire [255:0] descriptor_data;
+  wire [127:0] descriptor_data_0 = descriptor_data[127:0];
+  wire [127:0] descriptor_data_1 = descriptor_data[255:128];
   wire [4:0] context_entry_0;
   wire [4:0] context_entry_1;
   wire [1:0] context_enable;
@@ -32,7 +34,7 @@ module program_loader_tb;
       .frame_strobe(frame_strobe),
       .frame_data(frame_data),
       .descriptor_candidates({8{descriptor_address}}),
-      .descriptor_decision(7'd0),
+      .descriptor_decision(6'd0),
       .descriptor_data(descriptor_data),
       .context_entry_0(context_entry_0),
       .context_entry_1(context_entry_1),
@@ -133,14 +135,16 @@ module program_loader_tb;
 
     descriptor_address = 5'd0;
     #1;
-    if (descriptor_data !== 128'h0100_0001_0810_1010_1000_0000_0000_0009) begin
-      $display("FAIL: descriptor 0 readback %032h", descriptor_data);
+    if (descriptor_data_0 !== 128'h0100_0001_0810_1010_1000_0000_0000_0009 ||
+        descriptor_data_1 !== 128'h0100_0001_0810_1010_1000_0000_0000_0009) begin
+      $display("FAIL: descriptor 0 readback c0=%032h c1=%032h", descriptor_data_0, descriptor_data_1);
       $fatal(1);
     end
     descriptor_address = 5'd1;
     #1;
-    if (descriptor_data !== 128'h0000_0000_0010_1000_1000_0020_0000_000a) begin
-      $display("FAIL: descriptor 1 readback %032h", descriptor_data);
+    if (descriptor_data_0 !== 128'h0000_0000_0010_1000_1000_0020_0000_000a ||
+        descriptor_data_1 !== 128'h0000_0000_0010_1000_1000_0020_0000_000a) begin
+      $display("FAIL: descriptor 1 readback c0=%032h c1=%032h", descriptor_data_0, descriptor_data_1);
       $fatal(1);
     end
 
@@ -163,14 +167,17 @@ module program_loader_tb;
         descriptor_address = index[7:3];
         send_frame(make_frame(4'h1, 1'b0, index[7:3], index[2:0], readback_pattern));
         #1;
-        if (load_error || descriptor_data[(index%8)*16 +: 16] !== readback_pattern)
+        if (load_error ||
+            descriptor_data_0[(index%8)*16 +: 16] !== readback_pattern ||
+            descriptor_data_1[(index%8)*16 +: 16] !== readback_pattern)
           $fatal(1, "word readback mismatch pass=%0d row=%0d word=%0d", pass, index/8, index%8);
       end
       // Changing the address must expose the entire row without another clock.
       for (address_index = 31; address_index >= 0; address_index = address_index - 1) begin
         descriptor_address = address_index[4:0];
         #1;
-        if (descriptor_data !== expected_memory[address_index])
+        if (descriptor_data_0 !== expected_memory[address_index] ||
+            descriptor_data_1 !== expected_memory[address_index])
           $fatal(1, "full descriptor readback mismatch pass=%0d row=%0d", pass, address_index);
       end
     end

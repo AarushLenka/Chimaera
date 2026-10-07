@@ -1,29 +1,18 @@
+// Frozen shared-read runtime from dc2287144c0042ecdfc21a243ac17d616a9dcac0.
+// Simulation reference only; excluded from the production source manifest.
 /*
  * Two reaction cells executing compiler-loaded 128-bit descriptors.
  *
- * Each context owns one independent combinational descriptor read bus.
- * Context i's bus always presents the row
- * selected by that context's own event/alternate/timeout/pending successor
- * candidates; the pending-first arbiter keeps control of only the load enables
- * (load_0/load_1) and never selects descriptor data. Because a context's
- * request outranks any cross-context arbitration on load cycles, every loaded
- * descriptor is bit-identical to the previous single-port read. Simultaneous
- * cell fires still commit both predecoded actions immediately; one cell rearms
- * on that edge and the other is guaranteed service on the following edge,
- * ahead of new requests. The compiler budgets a two-cycle inclusive worst-case
- * rearm, and the descriptor ABI, clock, and action/rearm schedule are
- * unchanged.
+ * One descriptor read port uses pending-first bounded arbitration. Simultaneous
+ * cell fires commit both predecoded actions immediately; one cell rearms on that
+ * edge and the other is guaranteed service on the following edge, ahead of new
+ * requests. The compiler budgets a two-cycle inclusive worst-case rearm.
  */
 
 `default_nettype none
 `timescale 1ns / 1ps
 
-// The optional name lets the equivalence miter compile the frozen shared-read
-// reference and this runtime in one translation unit.
-`ifndef CHIMAERA_RUNTIME_MODULE
-`define CHIMAERA_RUNTIME_MODULE chimaera_program_runtime
-`endif
-module `CHIMAERA_RUNTIME_MODULE (
+module chimaera_program_runtime (
     input  wire         clk,
     input  wire         rst_n,
     input  wire         execution_halted,
@@ -31,14 +20,10 @@ module `CHIMAERA_RUNTIME_MODULE (
     input  wire [4:0]   context_entry_0,
     input  wire [4:0]   context_entry_1,
 
+    output wire [4:0]   descriptor_address,
     output wire [39:0]  descriptor_candidates,
-    // Per-context read decisions only: branch, timeout, pending. The
-    // pending-first grant result (select_request_1) stays inside this module
-    // and never reaches the descriptor read network.
-    output wire [5:0]   descriptor_decision,
-    // Two independent 128-bit read buses: context 0 in [127:0], context 1 in
-    // [255:128]. Both are consumed only by their own context's load enables.
-    input  wire [255:0] descriptor_data,
+    output wire [6:0]   descriptor_decision,
+    input  wire [127:0] descriptor_data,
 
     input  wire [7:0]   sync_inputs,
     input  wire [7:0]   rise_edges,
@@ -130,37 +115,34 @@ module `CHIMAERA_RUNTIME_MODULE (
   wire load_0 = service_0;
   wire load_1 = service_1;
 
-  // These addresses come only from registered control/pending state. Each
-  // context's read network decodes its four candidates before event matching
-  // finishes, so no arbitration signal ever selects descriptor data.
+  // The read data is consumed only on a load. Keep a candidate selected while
+  // idle so running/service_0 do not add another gate to every address bit.
+  assign descriptor_address = select_request_1 ? request_state_1 : request_state_0;
+  // These addresses come only from registered control/pending state. The memory
+  // decodes all eight before event matching and pending-first arbitration finish.
   assign descriptor_candidates = {
       pending_state_1, active_control_1[14:10],
       active_control_1[9:5], active_control_1[4:0],
       pending_state_0, active_control_0[14:10],
       active_control_0[9:5], active_control_0[4:0]
   };
-  // Per-context decisions: pending, timeout, branch for each context. None of
-  // these depends on the other context's event, so no arbitration level sits
-  // in front of either read bus.
   assign descriptor_decision = {
-      pending_1, pending_0,
+      select_request_1, pending_1, pending_0,
       fire_timeout_1, fire_timeout_0, branch_condition_1, branch_condition_0
   };
 
-  wire [127:0] descriptor_data_0 = descriptor_data[127:0];
-  wire [127:0] descriptor_data_1 = descriptor_data[255:128];
-  wire selected_dynamic_output_0 = descriptor_data_0[125:124] == 2'd2;
-  wire selected_dynamic_output_1 = descriptor_data_1[125:124] == 2'd2;
+  wire [2:0] selected_serial_mode = {1'b0, descriptor_data[125:124]};
+  wire selected_dynamic_output = selected_serial_mode == 3'd2;
   wire selected_dynamic_bit_0 = fire_0 ? post_shift_0[0] : current_shift_0[0];
   wire selected_dynamic_bit_1 = fire_1 ? post_shift_1[0] : current_shift_1[0];
-  wire [7:0] selected_action_value_0 = selected_dynamic_output_0 ?
-      ((descriptor_data_0[74:67] & ~descriptor_data_0[66:59]) |
-       (selected_dynamic_bit_0 ? descriptor_data_0[66:59] : 8'h00)) :
-      descriptor_data_0[74:67];
-  wire [7:0] selected_action_value_1 = selected_dynamic_output_1 ?
-      ((descriptor_data_1[74:67] & ~descriptor_data_1[66:59]) |
-       (selected_dynamic_bit_1 ? descriptor_data_1[66:59] : 8'h00)) :
-      descriptor_data_1[74:67];
+  wire [7:0] selected_action_value_0 = selected_dynamic_output ?
+      ((descriptor_data[74:67] & ~descriptor_data[66:59]) |
+       (selected_dynamic_bit_0 ? descriptor_data[66:59] : 8'h00)) :
+      descriptor_data[74:67];
+  wire [7:0] selected_action_value_1 = selected_dynamic_output ?
+      ((descriptor_data[74:67] & ~descriptor_data[66:59]) |
+       (selected_dynamic_bit_1 ? descriptor_data[66:59] : 8'h00)) :
+      descriptor_data[74:67];
 
   assign drive_value_0 = cell_drive_value_0;
   assign drive_value_1 = cell_drive_value_1;
@@ -217,9 +199,9 @@ module `CHIMAERA_RUNTIME_MODULE (
         end
       end
       if (load_0)
-        active_control_0 <= descriptor_data_0[125:91];
+        active_control_0 <= descriptor_data[125:91];
       if (load_1)
-        active_control_1 <= descriptor_data_1[125:91];
+        active_control_1 <= descriptor_data[125:91];
       if (fire_0 || fire_1)
         fault_lfsr <= next_lfsr(fault_lfsr);
     end
@@ -276,17 +258,17 @@ module `CHIMAERA_RUNTIME_MODULE (
       .fall_edges(fall_edges),
       .load(load_0),
       .load_state(request_state_0),
-      .load_event_kind({1'b0, descriptor_data_0[2:0]}),
-      .load_event_mask(descriptor_data_0[10:3]),
-      .load_event_value(descriptor_data_0[18:11]),
-      .load_level_mask(descriptor_data_0[26:19]),
-      .load_level_value(descriptor_data_0[34:27]),
-      .load_timeout(descriptor_data_0[50:35]),
-      .load_sample_mask(descriptor_data_0[58:51]),
-      .load_action_mask(descriptor_data_0[66:59]),
+      .load_event_kind({1'b0, descriptor_data[2:0]}),
+      .load_event_mask(descriptor_data[10:3]),
+      .load_event_value(descriptor_data[18:11]),
+      .load_level_mask(descriptor_data[26:19]),
+      .load_level_value(descriptor_data[34:27]),
+      .load_timeout(descriptor_data[50:35]),
+      .load_sample_mask(descriptor_data[58:51]),
+      .load_action_mask(descriptor_data[66:59]),
       .load_action_value(selected_action_value_0),
-      .load_oe_mask(descriptor_data_0[82:75]),
-      .load_oe_value(descriptor_data_0[90:83]),
+      .load_oe_mask(descriptor_data[82:75]),
+      .load_oe_value(descriptor_data[90:83]),
       .fault_delay(mutation_delay_0),
       .fault_suppress(mutation_suppress_0),
       .fault_hold_mask(mutation_hold_mask_0),
@@ -315,17 +297,17 @@ module `CHIMAERA_RUNTIME_MODULE (
       .fall_edges(fall_edges),
       .load(load_1),
       .load_state(request_state_1),
-      .load_event_kind({1'b0, descriptor_data_1[2:0]}),
-      .load_event_mask(descriptor_data_1[10:3]),
-      .load_event_value(descriptor_data_1[18:11]),
-      .load_level_mask(descriptor_data_1[26:19]),
-      .load_level_value(descriptor_data_1[34:27]),
-      .load_timeout(descriptor_data_1[50:35]),
-      .load_sample_mask(descriptor_data_1[58:51]),
-      .load_action_mask(descriptor_data_1[66:59]),
+      .load_event_kind({1'b0, descriptor_data[2:0]}),
+      .load_event_mask(descriptor_data[10:3]),
+      .load_event_value(descriptor_data[18:11]),
+      .load_level_mask(descriptor_data[26:19]),
+      .load_level_value(descriptor_data[34:27]),
+      .load_timeout(descriptor_data[50:35]),
+      .load_sample_mask(descriptor_data[58:51]),
+      .load_action_mask(descriptor_data[66:59]),
       .load_action_value(selected_action_value_1),
-      .load_oe_mask(descriptor_data_1[82:75]),
-      .load_oe_value(descriptor_data_1[90:83]),
+      .load_oe_mask(descriptor_data[82:75]),
+      .load_oe_value(descriptor_data[90:83]),
       .fault_delay(mutation_delay_1),
       .fault_suppress(mutation_suppress_1),
       .fault_hold_mask(mutation_hold_mask_1),
@@ -345,7 +327,7 @@ module `CHIMAERA_RUNTIME_MODULE (
       current_state_0, current_state_1,
       current_shift_0[7:1], current_shift_1[7:1],
       post_shift_0[7:1], post_shift_1[7:1],
-      descriptor_data_0[127:126], descriptor_data_1[127:126], 1'b0
+      descriptor_data[127:126], 1'b0
   };
 
 endmodule
