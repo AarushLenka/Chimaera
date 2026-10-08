@@ -1,18 +1,14 @@
 /*
  * Two reaction cells executing compiler-loaded 128-bit descriptors.
  *
- * Each context owns one independent combinational descriptor read bus.
- * Context i's bus always presents the row
- * selected by that context's own event/alternate/timeout/pending successor
- * candidates; the pending-first arbiter keeps control of only the load enables
- * (load_0/load_1) and never selects descriptor data. Because a context's
- * request outranks any cross-context arbitration on load cycles, every loaded
- * descriptor is bit-identical to the previous single-port read. Simultaneous
- * cell fires still commit both predecoded actions immediately; one cell rearms
- * on that edge and the other is guaranteed service on the following edge,
- * ahead of new requests. The compiler budgets a two-cycle inclusive worst-case
- * rearm, and the descriptor ABI, clock, and action/rearm schedule are
- * unchanged.
+ * Each context has a local combinational candidate decoder. A shallow final
+ * row choice feeds one shared descriptor read bus; the pending-first arbiter
+ * selects that row choice and still grants at most one reload per edge.
+ * Simultaneous cell fires still commit both predecoded actions immediately;
+ * one cell rearms on that edge and the other is guaranteed service on the
+ * following edge, ahead of new requests. The compiler budgets a two-cycle
+ * inclusive worst-case rearm, and the descriptor ABI, clock, and action/rearm
+ * schedule are unchanged.
  */
 
 `default_nettype none
@@ -33,12 +29,15 @@ module `CHIMAERA_RUNTIME_MODULE (
 
     output wire [39:0]  descriptor_candidates,
     // Per-context read decisions only: branch, timeout, pending. The
-    // pending-first grant result (select_request_1) stays inside this module
-    // and never reaches the descriptor read network.
+    // pending-first grant exits separately as descriptor_select_1 and controls
+    // only the shallow final row choice after both context decoders.
     output wire [5:0]   descriptor_decision,
-    // Two independent 128-bit read buses: context 0 in [127:0], context 1 in
-    // [255:128]. Both are consumed only by their own context's load enables.
+    // The loader presents one shared final 128-bit bus in both halves of this
+    // legacy 256-bit interface. At most one reload is serviced per edge.
     input  wire [255:0] descriptor_data,
+    // Hybrid read topology: the shared final bus chooses context 1 only when
+    // the pending-first arbiter grants context 1's reload.
+    output wire         descriptor_select_1,
 
     input  wire [7:0]   sync_inputs,
     input  wire [7:0]   rise_edges,
@@ -129,10 +128,11 @@ module `CHIMAERA_RUNTIME_MODULE (
   wire service_1 = running && select_request_1;
   wire load_0 = service_0;
   wire load_1 = service_1;
+  assign descriptor_select_1 = select_request_1;
 
   // These addresses come only from registered control/pending state. Each
   // context's read network decodes its four candidates before event matching
-  // finishes, so no arbitration signal ever selects descriptor data.
+  // finishes; the final grant selects only the already-decoded row vector.
   assign descriptor_candidates = {
       pending_state_1, active_control_1[14:10],
       active_control_1[9:5], active_control_1[4:0],
@@ -140,8 +140,9 @@ module `CHIMAERA_RUNTIME_MODULE (
       active_control_0[9:5], active_control_0[4:0]
   };
   // Per-context decisions: pending, timeout, branch for each context. None of
-  // these depends on the other context's event, so no arbitration level sits
-  // in front of either read bus.
+  // these depends on the other context's event, so cross-context arbitration
+  // does not enter either local decoder; the final row grant is applied after
+  // both one-hot rows are available.
   assign descriptor_decision = {
       pending_1, pending_0,
       fire_timeout_1, fire_timeout_0, branch_condition_1, branch_condition_0

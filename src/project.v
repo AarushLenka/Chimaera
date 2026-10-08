@@ -63,8 +63,9 @@ module tt_um_chimaera (
   wire                   cfg_active;
   wire [39:0]            loaded_descriptor_candidates;
   wire [5:0]             loaded_descriptor_decision;
-  // Two per-context descriptor read buses: context 0 in [127:0],
-  // context 1 in [255:128].
+  wire                   loaded_descriptor_select_1;
+  // The loader exposes a duplicated view of one shared final read bus so the
+  // runtime ABI remains unchanged while only one reload is serviced per edge.
   wire [255:0]           loaded_descriptor_data;
   wire [4:0]             loaded_context_entry_0;
   wire [4:0]             loaded_context_entry_1;
@@ -162,6 +163,7 @@ module tt_um_chimaera (
       .cfg_active             (cfg_active),
       .descriptor_candidates  (loaded_descriptor_candidates),
       .descriptor_decision    (loaded_descriptor_decision),
+      .descriptor_select_1    (loaded_descriptor_select_1),
       .descriptor_data        (loaded_descriptor_data),
       .context_entry_0        (loaded_context_entry_0),
       .context_entry_1        (loaded_context_entry_1),
@@ -193,6 +195,7 @@ module tt_um_chimaera (
       .descriptor_candidates(loaded_descriptor_candidates),
       .descriptor_decision (loaded_descriptor_decision),
       .descriptor_data     (loaded_descriptor_data),
+      .descriptor_select_1 (loaded_descriptor_select_1),
       .sync_inputs         (loaded_sync_inputs),
       .rise_edges          (loaded_rise_edges),
       .fall_edges          (loaded_fall_edges),

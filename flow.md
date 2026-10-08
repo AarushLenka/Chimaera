@@ -824,3 +824,40 @@ and setup TNS `0`; its global routing remains in progress. The first map's
 detailed route is also still running. The local containers and evidence are
 retained at the path above. Hosted verification awaits explicit push approval
 under `agent-docs/AGENTS.md` §9. No push has been made.
+
+## 2026-10-08 — Hybrid shared-final-bus candidate
+
+The current private-read implementation improves local logical timing by
+removing arbitration from each descriptor data tree, but its four context
+selectors and duplicated 128-bit read buses raise the local screen to about
+`737374 µm²` and `82%` utilization. The exact hosted `dc22871` report shows why
+that tradeoff matters: the shared-read path has slow setup WNS
+`-6.7110816581 ns`, TNS `-1086.7175058528 ns`, 281 violations, and a routed
+critical path through loaded input synchronization, event/rearm logic,
+`select_request_1`, shared row/data selection, and a reaction action endpoint.
+The private-read hosted attempt timed out before yielding a routed report.
+
+The selected candidate changes `src/chimaera_program_loader.v` to use two local
+`chimaera_context_selector` instances, one per context, followed by one shallow
+final row mux controlled by `descriptor_select_1` and one shared 128-bit read
+tree. `src/chimaera_program_runtime.v` exports the existing pending-first winner
+as that final-row control; `src/chimaera_host_interface.v` and `src/project.v`
+carry it to the loader. The result is duplicated only into the existing 256-bit
+runtime interface, so the runtime's fixed same-edge load behavior is preserved.
+The input frontend's three CDC banks and the reaction-cell fire/timeout/rearm
+semantics were not changed. The arbitration Boolean equations were not changed.
+
+The full generic top screen reports `40419` hierarchy cells for the candidate,
+versus `49388` for the private-read baseline, a reduction of `18.16%`. A
+one-selector-per-context/private-bus intermediate measured `48452` cells and
+row-select fanout `126`, so it was rejected in favor of the shared final bus.
+`test/descriptor_hybrid_read_equiv.v` proves the hybrid shared read against the
+original selector for all candidate/decision/descriptor values on one 32-bit
+slice; the production generate repeats that wiring for all four slices.
+
+`bash scripts/local-verify.sh` passes after the final source and checker edits.
+Native IHP synthesis/P&R cannot run in this workspace because `ihp-sg13cmos5l`
+is not installed. Therefore this entry records no candidate IHP area,
+utilization, WNS/TNS, hold, fanout/slew, congestion, detailed-route, DRC, LVS,
+antenna, or tile-fit result. The candidate remains pending exact hosted
+commit-identity validation; no commit or push was made.

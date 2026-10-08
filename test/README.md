@@ -12,8 +12,8 @@ See below to get started or for more information, check the [website](https://ti
 
 The production RTL gate is `bash scripts/local-verify.sh` from the repository
 root. It includes all five demos, loader and runtime benches, strict lint,
-synthesis, private-read topology checks, and the universal descriptor-read SAT
-proof. `make -C test phase5` runs the standalone benches, including the 260-cycle
+synthesis, hybrid-read topology checks, and the descriptor-read SAT proof.
+`make -C test phase5` runs the standalone benches, including the 260-cycle
 runtime comparison against the frozen `dc22871` shared-read reference under
 `test/reference/`. That reference is simulation-only and is excluded from
 `info.yaml` and the production Verilog source list.

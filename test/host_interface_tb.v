@@ -38,6 +38,7 @@ module host_interface_tb;
       .cfg_active(cfg_active),
       .descriptor_candidates({8{descriptor_address}}),
       .descriptor_decision(6'd0),
+      .descriptor_select_1(1'b0),
       .descriptor_data(descriptor_data),
       .context_entry_0(context_entry_0),
       .context_entry_1(context_entry_1),

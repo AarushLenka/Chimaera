@@ -1027,3 +1027,55 @@ final area reduction is claimed.
 
 **Status:** authorized by Hausen; implemented and locally verified; physical
 validation in progress
+
+## 2026-10-08 — Reduce private-read duplication with a shared final bus
+
+**Diagnosis:** The exact `dc22871` hosted report remains the physical baseline:
+slow-corner setup WNS `-6.7110816581 ns`, TNS `-1086.7175058528 ns`, 281
+violations, standard-cell area `697187 µm²`, utilization `77.2577%`, and clean
+hold/DRC/LVS/antenna. Its worst path starts in the loaded input synchronizer,
+passes event/rearm logic and `select_request_1` at about `15.29 ns`, reaches the
+shared descriptor row/data selection at about `20.93 ns`, and arrives at the
+reaction action endpoint at `27.56 ns` against a `20.85 ns` requirement. The
+private-read local screen removed that late shared selection from the logical
+path, but duplicated four context selectors and two 128-bit data trees, growing
+the local screen to about `737374 µm²` and `82%` utilization. The hosted private
+read attempt stalled before producing routed evidence.
+
+**Decision:** Use a hybrid Option A/C topology. Keep one four-candidate,
+context-local selector per context (eight early 5-to-32 decoders total), then
+choose between the two decoded one-hot row vectors with the existing
+pending-first `descriptor_select_1` grant. Feed one shared 128-bit read tree and
+duplicate its result only at the legacy 256-bit interface boundary. This removes
+the duplicated private data trees and eight duplicated decoders while preserving
+the same-cycle load protocol, 32 × 128-bit storage, 20 ns clock, pending-first
+priority, and descriptor ABI. Option B was not inserted because a registered
+request would change the same-edge load schedule and requires a control-protocol
+redesign. Option D was screened but the existing arbitration equations already
+encode the required priority/deferred-reload behavior, so they remain unchanged.
+
+**Measured local screen:** The exploratory one-selector-per-context/private-bus
+variant mapped to `48452` generic top hierarchy cells and retained a row-select
+fanout of `126`; it was not selected. The shared-final-bus candidate maps to
+`40419` generic top hierarchy cells versus `49388` for the current private-read
+baseline, a reduction of `8969` cells (`18.16%`). These are generic synthesis
+counts, not IHP area, utilization, routed timing, or signoff measurements.
+
+**Verification:** The candidate passes `bash scripts/local-verify.sh`, including
+30 host tests, five Phase 6 demos, all standalone Phase 5 benches, the 260-cycle
+runtime comparison and its simultaneous/deferred/timeout/branch/dynamic-selector
+and saturation cases, Phase 4 smoke, strict Verilator lint, generic Yosys
+synthesis, the hybrid topology checks, and the SAT proof for every decision and
+descriptor value on one 32-bit read slice. The four generated production slices
+use identical wiring. The optional Cocotb run and native IHP synthesis/P&R were
+not available in this environment: the IHP SG13G2 PDK is absent, so no candidate
+area/utilization/WNS/TNS/hold/fanout/slew/congestion or route/signoff result is
+claimed.
+
+**Consequences:** This is the best locally measured candidate and is ready for an
+exact hosted comparison, but it is not yet a physical winner. The next gate must
+verify that the shallow final row mux and shared data tree improve the routed
+path without recreating the `dc22871` congestion pattern. No commit or push was
+made.
+
+**Status:** locally functionally proven; exact hosted physical validation required

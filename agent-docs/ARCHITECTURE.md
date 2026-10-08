@@ -58,9 +58,10 @@ data-dependent or contention-dependent as a correctness bug, not a style issue (
 
 A shared execution block serves both reaction cells whenever a cell needs
 bookkeeping work between firing and its next state being ready. Each context
-now has a private combinational descriptor read bus over the shared memory.
-Pending-first arbitration controls only the reload enables. Simultaneous cells
-still commit their locally predecoded actions on
+has a local combinational successor decoder over the shared memory. The two
+decoded one-hot rows feed one shared final descriptor read bus; pending-first
+arbitration selects between those already-decoded rows and controls the reload
+enables. Simultaneous cells still commit their locally predecoded actions on
 the same fixed-latency edge; one descriptor reload occurs on that edge and the
 deferred reload is guaranteed the following edge, before any new request. Thus
 rearm latency is at most two inclusive cycles without making reaction latency
@@ -122,22 +123,25 @@ document):
   physical buffer; if implemented separately, log why in `decisions.md`).
 - A few bytes of mailbox storage.
 
-The descriptor memory has two combinational read buses, one per context, and
-one shared write port. Each context has two selector banks, each decoding its
-four registered event, alternate, timeout, and pending successor state IDs.
-Each bank feeds two adjacent 32-bit read slices. Only that context's own branch,
-timeout, and pending decisions select its already decoded row; cross-context
-arbitration never selects descriptor data. Each row select drives at most 64
-data-bit loads. Decoder and selector hierarchy is retained through technology
-mapping; storage and read-data logic can still optimize across the top level.
+The descriptor memory has one shared combinational 128-bit read bus and one
+shared write port. Each context has one selector decoding its four registered
+event, alternate, timeout, and pending successor state IDs. A separate
+pending-first grant chooses between the two already-decoded one-hot rows, then
+two read selector banks feed adjacent 32-bit slices. The grant therefore adds
+one shallow row mux after local decode instead of selecting among binary
+addresses before the decoder. Decoder and selector hierarchy is retained
+through technology mapping; storage and read-data logic can still optimize
+across the top level.
 
-The runtime exposes registered candidates and six local decision bits directly
-and consumes only its own 128-bit bus on each reload. The memory contents,
-loader stream/CRC, load enables, same-edge actions, and inclusive two-cycle
-rearm schedule retain their prior behavior, with no added register. Local SAT
-proves both buses equal the previous shared read for their respective context
-for arbitrary candidates, decisions, and memory data. Physical signoff still
-requires a new exact-commit routed report.
+The runtime exposes registered candidates, six local decision bits, and the
+separate final-row grant. The loader duplicates the shared 128-bit result into
+the existing 256-bit interface, while only one reload is serviced per edge.
+The memory contents, loader stream/CRC, load enables, same-edge actions, and
+inclusive two-cycle rearm schedule retain their prior behavior, with no added
+register. Local SAT proves a complete 32-bit read slice against the selected
+context reference for arbitrary candidates, decisions, grant, and memory data;
+the four identical slice instances are structurally checked in the top-level
+netlist. Physical signoff still requires a new exact-commit routed report.
 
 Trace memory should stay small by design (see `SPEC.md` §9's "capture the first
 violation plus a small window" property) — resist the temptation to grow trace
@@ -222,8 +226,9 @@ bidirectional pins to the loaded runtime and releases them while loading/halted.
 The compiler emits the accepted 32 × 128-bit descriptor format and a CRC-protected
 loader stream for protocol and supported Phase 6 sources. Two generic reaction
 cells execute the loaded descriptors. Their event/action fast paths are
-independent; descriptor rearm uses private read buses with the bounded
-pending-first reload policy in §3. Mutation and contract records stay outside the descriptor fast
+independent; descriptor rearm uses two local candidate decoders followed by a
+shared final read bus with the bounded pending-first reload policy in §3.
+Mutation and contract records stay outside the descriptor fast
 path. The final output stage masks values on compiler-declared open-drain pins,
 making an active high drive structurally impossible even for malformed
 descriptor or fault action bits.

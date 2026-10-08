@@ -14,6 +14,7 @@ module chimaera_host_interface (
 
     input  wire [39:0]  descriptor_candidates,
     input  wire [5:0]   descriptor_decision,
+    input  wire         descriptor_select_1,
     output wire [255:0] descriptor_data,
     output wire [4:0]   context_entry_0,
     output wire [4:0]   context_entry_1,
@@ -72,6 +73,7 @@ module chimaera_host_interface (
       .frame_data             (frame_data),
       .descriptor_candidates  (descriptor_candidates),
       .descriptor_decision    (descriptor_decision),
+      .descriptor_select_1    (descriptor_select_1),
       .descriptor_data        (descriptor_data),
       .context_entry_0        (context_entry_0),
       .context_entry_1        (context_entry_1),

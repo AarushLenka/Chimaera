@@ -17,7 +17,7 @@ module program_runtime_tb;
   reg [127:0] contract_config_0 = 128'h0;
   reg [127:0] contract_config_1 = 128'h0;
   // Diagnostic address of the pending-first winner, retained to check the
-  // original single-reload schedule independently of the new private buses.
+  // original single-reload schedule independently of the read implementation.
   wire [4:0] descriptor_address = dut.select_request_1 ?
       dut.request_state_1 : dut.request_state_0;
   wire [39:0] descriptor_candidates;
