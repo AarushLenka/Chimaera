@@ -1079,3 +1079,64 @@ path without recreating the `dc22871` congestion pattern. No commit or push was
 made.
 
 **Status:** locally functionally proven; exact hosted physical validation required
+
+## 2026-10-08 — Remove live samples from the mutation/branch cone
+
+**Context:** The exact `39c1395` artifact builds the hybrid shared descriptor
+bus. Its SS setup is `-7.130902 ns`, TNS `-815.552449 ns`, with 283 violations,
+all launched by the loaded input synchronizer's bit 7. The worst path spends
+until `15.267402 ns` computing the mutation-dependent byte branch, then traverses
+row selection and the shared descriptor tree before reaching a reaction timer
+at `27.939173 ns`. Exact-library/SPEF replay reproduces the failing path.
+
+**Decision:** Precompute both possible sampled-bit branch predicates from
+registered state and select the one-bit result with the actual sample. Retain
+the predicate module boundary through mapping, and check that no live input
+reaches its inputs. Combine independent corruption masks in parallel; every
+mask predicate still tests the original shifted byte. Keep the original
+mutation/action implementation and all registered behavior. Report PNR timing
+at FF/TT/SS and enforce final setup at all corners rather than only typical.
+
+**Alternatives considered:** Explicit layer RC overrides were tested and
+removed: OpenROAD already falls back to the technology LEF when the layer
+override table is zero. A local archived-placement reroute still underestimates
+critical capacitance relative to the final extracted artifact, so a green
+global-route result cannot demonstrate closure. Adding pipeline cycles,
+relaxing the 20 ns clock, or changing the loader ABI/rearm schedule would violate
+the existing contract and was not used.
+
+**Consequences:** Matched local IHP AREA-0 mapping grows from `532631.6352` to
+`541146.8788 um2` (`1.60%`), with the same 5795 sequential cells. Universal SAT
+proves the new branch for arbitrary inputs, including all four mutation slots;
+generic and mapped topology checks confirm two combinational predicates fed
+only by registered state. The runtime miter now freezes the old execution
+engine as well as the old loader topology. Local RTL and functional mapped
+simulation pass. Detailed-route/extracted screening is in progress; Phase 7
+and exact hosted signoff remain open. See `agent-docs/SS_SETUP_39C1395.md`.
+
+**Status:** requested by Hausen; implemented and locally proven; physical validation in progress
+
+### 2026-10-09 — Local checkpoint and screening progress
+
+The first four-parameterized-predicate map measured `545380.8948 um2`, but the
+flow's unmapped-cell checker rejected its retained `$paramod` module names.
+The accepted two-dual-output form measures `541146.8788 um2`. The production
+generic hierarchy contains 41475 cells; the experimental private-read runner
+still passes its gates after adding the frozen-engine reference to its compile
+list. Its separate flat generic ABC screen measures 32992 production cells
+versus 40369 private-read cells; these are not IHP areas.
+
+The accepted local physical screen reaches post-GRT area `694027.96 um2`
+(`76.9077%` core utilization). Setup repair initially sees 21 estimated failing
+endpoints at `-1.914 ns`, then resizes two cells, inserts one buffer, and swaps
+one pin to reach `+0.114 ns` before rerouting. It also inserts 26 hold buffers.
+The subsequent intermediate report has two FF hold violations at
+`-0.0216684 ns`. These estimates do not prove extracted setup or hold closure;
+detailed routing is still running. The SS-first corner ordering avoids the
+intermediate script's first-corner-only reporting behavior.
+
+A regression using the local LibreLane checker reproduces the old gate
+accepting 283 SS failures with a warning and confirms the new setup override
+rejects them. A functional-proof checkpoint includes the previously untracked
+descriptor miter already required by the verification script, without changing
+its contents. No archived GDS logs are staged, and no push is authorized.

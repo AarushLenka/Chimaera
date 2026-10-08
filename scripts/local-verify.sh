@@ -37,6 +37,9 @@ grep -m1 -A12 '^=== design hierarchy ===' "$yosys_log"
 echo "== descriptor read topology and equivalence =="
 python3 scripts/check_descriptor_read.py "$yosys_netlist"
 
+echo "== branch lookahead topology and equivalence =="
+python3 scripts/check_branch_lookahead.py "$yosys_netlist"
+
 if [[ "${RUN_COCOTB:-0}" == "1" ]]; then
   echo "== cocotb simulation =="
   if ! command -v cocotb-config >/dev/null 2>&1; then

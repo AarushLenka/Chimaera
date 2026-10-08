@@ -861,3 +861,57 @@ is not installed. Therefore this entry records no candidate IHP area,
 utilization, WNS/TNS, hold, fanout/slew, congestion, detailed-route, DRC, LVS,
 antenna, or tile-fit result. The candidate remains pending exact hosted
 commit-identity validation; no commit or push was made.
+
+## 2026-10-08 — Trace 39c1395 SS failure and precompute branches
+
+The latest artifact really contains the hybrid shared-final-bus source despite
+its private-read commit subject. FF/TT setup passes, but SS is `-7.130902 ns`
+with 283 violations. An exact PDK-library/netlist/SDC/SPEF replay reproduces the
+worst path. All failing paths launch from synchronized input bit 7; the sample
+feeds mutation comparisons and corruption XORs before byte-branch selection,
+then the descriptor bus. This identifies a specific upstream serial cone to
+remove instead of another speculative loader rewrite.
+
+The zero-valued resizer layer RC table was investigated as a possible cause.
+Primary OpenROAD code and a controlled reroute show that zero overrides fall
+back to the technology LEF; explicit equal RC values do not change the result.
+Those overrides were removed. The local global-route estimate remains much
+more optimistic than extracted SS, so the candidate must reach extraction.
+
+The execution engine now computes both sampled-bit branch outcomes before the
+live sample arrives. A retained dual-output predicate per context avoids the
+four parameterized modules rejected by the first local mapped-cell checker.
+The final form passes synthesis and mapped topology checks. A universal branch
+miter and frozen pre-change execution reference guard functional behavior. The
+local gate passes 30 host tests, five demos, standalone benches, runtime miter,
+smoke, strict lint, generic synthesis, and both formal/topology checks. A
+functional-only mapped IHP simulation passes load, commit/resume, event action,
+and timeout without delay annotation. Optional Cocotb was not run.
+
+A matched local baseline measures a `1.60%` mapped-area increase and no new
+registers. Local routing/extraction runs in
+`/tmp/chimaera-ss-fix.JiNkH8/runs/branch-lookahead-v2/` with exact artifact timing
+libraries, LEFs, extraction rules, and the 6x4 floorplan, but an older
+LibreLane/OpenROAD version. It is screening, not exact hosted signoff. The
+production configuration now reports and checks SS instead of allowing a
+typical-only setup gate. Final extracted results are pending; no push was made.
+
+### 2026-10-09 — Functional checkpoint while detailed routing runs
+
+The local flow's intermediate STA script reports only its first corner even
+when multiple libraries are loaded. SS is now first in the production PNR
+corner list, with the final setup checker still covering every corner. An
+actual checker regression accepts the baseline's 283 SS failures under the old
+typical-only setting and rejects them under the new override.
+
+The frozen-engine change also required one compile-list addition in the isolated
+private-read runner. Its full tests, runtime miter, lint, synthesis, topology,
+SAT, and flat generic ABC screen pass. The existing descriptor miter referenced
+by the production gate was untracked; the checkpoint includes it unchanged so
+verification does not depend on a missing file after checkout.
+
+Detailed routing is still running. Post-GRT area is `694027.96 um2`, core
+utilization `76.9077%`; repair saw estimated setup `-1.914 ns` at 21 endpoints
+and reached `+0.114 ns` with two upsizes, one buffer, and one pin swap before
+rerouting. Two intermediate FF hold violations remain (`-0.0216684 ns`).
+Neither setup nor hold is claimed closed until extraction. No push was made.

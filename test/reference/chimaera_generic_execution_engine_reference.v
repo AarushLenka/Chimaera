@@ -3,54 +3,7 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-// Compute both possible sampled-bit branches from registered state. Preserve
-// this boundary so mapping cannot push the late pin value back through the
-// mutation comparisons, XORs, and byte comparison. Only a Boolean mux remains
-// between the sampled input and the runtime successor selector.
-/* verilator lint_off DECLFILENAME */
-(* keep_hierarchy = "yes" *)
-module chimaera_branch_predicate (
-    input  wire [7:0]   current_shift,
-    input  wire [3:0]   count_after,
-    input  wire [34:0]  control,
-    input  wire [127:0] mutation_config,
-    input  wire [15:0]  fault_lfsr,
-    output wire [1:0]  condition_by_sample
-);
-  wire [7:0] shift_base = control[32] ? control[28:21] :
-      control[31] ? 8'h00 : current_shift;
-  genvar sampled_bit;
-  genvar slot;
-  generate
-    for (sampled_bit = 0; sampled_bit < 2; sampled_bit = sampled_bit + 1) begin : hypothesis
-      wire [7:0] shift_after = control[34:33] == 2'd1 ?
-          {shift_base[6:0], (sampled_bit != 0)} : control[34:33] == 2'd2 ?
-          {1'b0, shift_base[7:1]} : shift_base;
-      wire [7:0] corrupt_mask [0:3];
-      for (slot = 0; slot < 4; slot = slot + 1) begin : mutation
-        wire enabled = mutation_config[slot*32+31] &&
-            mutation_config[slot*32+24 +: 4] == 4'd1 &&
-            mutation_config[slot*32+28 +: 3] == 3'd1 &&
-            shift_after == mutation_config[slot*32+16 +: 8] &&
-            (fault_lfsr[7:0] ^ fault_lfsr[15:8]) <=
-                mutation_config[slot*32 +: 8];
-        assign corrupt_mask[slot] = enabled ?
-            mutation_config[slot*32+8 +: 8] : 8'h00;
-      end
-      // Every corruption predicate tests the original shift_after value; the
-      // enabled XOR masks combine in parallel without changing priority.
-      wire [7:0] faulted_shift = shift_after ^ corrupt_mask[0] ^
-          corrupt_mask[1] ^ corrupt_mask[2] ^ corrupt_mask[3];
-      assign condition_by_sample[sampled_bit] =
-          (!control[15] || count_after == control[19:16]) &&
-          (!control[20] || faulted_shift == control[28:21]);
-    end
-  endgenerate
-  wire _unused = &{control[14:0], control[30:29], 1'b0};
-endmodule
-/* verilator lint_on DECLFILENAME */
-
-module chimaera_generic_execution_engine (
+module chimaera_generic_execution_engine_reference (
     input  wire        clk,
     input  wire        rst_n,
 
@@ -163,20 +116,10 @@ module chimaera_generic_execution_engine (
   assign count_after_0 = next_count(count_0, control_0[30], control_0[29]);
   assign count_after_1 = next_count(count_1, control_1[30], control_1[29]);
 
-  wire [1:0] branch_by_sample_0;
-  wire [1:0] branch_by_sample_1;
-  chimaera_branch_predicate branch_lookahead_0 (
-      .current_shift(shift_0), .count_after(count_after_0),
-      .control(control_0), .mutation_config(mutation_config_0),
-      .fault_lfsr(fault_lfsr), .condition_by_sample(branch_by_sample_0)
-  );
-  chimaera_branch_predicate branch_lookahead_1 (
-      .current_shift(shift_1), .count_after(count_after_1),
-      .control(control_1), .mutation_config(mutation_config_1),
-      .fault_lfsr(fault_lfsr), .condition_by_sample(branch_by_sample_1)
-  );
-  assign condition_0 = (|fire_sample_0) ? branch_by_sample_0[1] : branch_by_sample_0[0];
-  assign condition_1 = (|fire_sample_1) ? branch_by_sample_1[1] : branch_by_sample_1[0];
+  assign condition_0 = (!control_0[15] || count_after_0 == control_0[19:16]) &&
+                       (!control_0[20] || faulted_shift_0 == control_0[28:21]);
+  assign condition_1 = (!control_1[15] || count_after_1 == control_1[19:16]) &&
+                       (!control_1[20] || faulted_shift_1 == control_1[28:21]);
 
   integer mutation_slot_0;
   integer mutation_slot_1;

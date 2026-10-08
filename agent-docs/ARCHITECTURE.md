@@ -78,6 +78,16 @@ logic costs 276 generic cells, versus 9,214 for the descriptor loader, and avoid
 adding another queued sample/control record. Revisit that trade only if physical
 hardening shows it is worthwhile.
 
+Each loaded context precomputes its branch predicate for both possible serial
+sample bits from registered shift/count/control, mutation records, and LFSR state.
+The synchronized sampled input selects between those two Boolean results. A
+retained combinational module boundary keeps byte mutation and comparison ahead
+of the late sampled-bit choice through synthesis. This removes those operations
+from the input-to-descriptor selection path without adding storage or changing
+the same-edge action/reload schedule. A universal SAT check covers arbitrary
+state, samples, and all four mutation records; the runtime comparison uses frozen
+pre-lookahead execution logic as its reference.
+
 Starting components:
 
 - 16-bit datapath.

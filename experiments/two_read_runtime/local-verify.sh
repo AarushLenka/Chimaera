@@ -55,6 +55,7 @@ iverilog -g2012 \
   -o /tmp/chimaera-two-read-equivalence.vvp \
   "$repo_root/src/chimaera_reaction_cell.v" \
   "$repo_root/src/chimaera_generic_execution_engine.v" \
+  "$repo_root/test/reference/chimaera_generic_execution_engine_reference.v" \
   "$repo_root/src/chimaera_contract_monitor.v" \
   "$repo_root/test/reference/chimaera_program_runtime_single_read.v" \
   "$candidate_root/src/chimaera_program_loader.v" \

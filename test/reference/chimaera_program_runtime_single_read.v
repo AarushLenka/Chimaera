@@ -207,7 +207,7 @@ module chimaera_program_runtime (
     end
   end
 
-  chimaera_generic_execution_engine execution_engine (
+  chimaera_generic_execution_engine_reference execution_engine (
       .clk(clk),
       .rst_n(runtime_rst_n),
       .fire_0(fire_0),
