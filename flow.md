@@ -915,3 +915,39 @@ utilization `76.9077%`; repair saw estimated setup `-1.914 ns` at 21 endpoints
 and reached `+0.114 ns` with two upsizes, one buffer, and one pin swap before
 rerouting. Two intermediate FF hold violations remain (`-0.0216684 ns`).
 Neither setup nor hold is claimed closed until extraction. No push was made.
+
+## 2026-10-09 — Restore frontend alignment and require physical signoff
+
+The completed branch-lookahead screen does not close timing: extracted SS
+setup is -6.309755 ns with TNS -599.086280 ns and 300 violations; FF hold is
+-0.047645 ns with four violations. FF/TT setup and TT/SS hold pass. There are
+89 SS slew violations, 21 TT slew violations and ten capacitance violations
+at every corner. Standard-cell area is 694344 um2 at 76.9426% utilization;
+routing DRC and antenna counts are zero, but the screen omitted full signoff.
+
+An uncommitted input pipeline also failed the existing frontend alignment
+test on reset and added a cycle to loaded/execution observations. It was backed
+up under `/tmp/chimaera-status-backup/` and replaced with the committed aligned
+two-flop frontend. The full functional gate passes again: 30 host tests, five
+demos, standalone benches, runtime comparison, smoke, lint, synthesis and SAT.
+
+The local and production configurations now require all-corner slew and
+capacitance checks as well as setup, and explicitly enable Magic DRC, KLayout
+DRC and LVS. Actual LibreLane checker methods reject the failing extracted
+metrics and accept clean metrics under both configurations. `RUN_LVS` is the
+supported LVS flag; the removed `RUN_NETGEN_LVS` edit was not that flag.
+
+The worst extracted path now starts at synchronized input bit 2, with heavy
+loads on the rising-edge detector and the final descriptor read reduction.
+An isolated repair reads those extracted loads, makes cell sizing/pin-swap
+changes and inserts electrical/hold buffers without adding registers. Before
+rerouting, area is 695478 um2, about 0.16% above the input route. Functional
+mapped simulation passes load, commit/resume, event action and timeout. The
+checked-in `scripts/repair-extracted.tcl` reproduces the trial's netlist hash.
+
+The first restart retained old signal wiring and incorrectly reduced GRT
+resources. That run was stopped; the corrected script removes regular wires
+while retaining the power grid before a fresh route. The separate corrected
+screen is `/tmp/chimaera-ss-fix.JiNkH8/runs/extracted-repair-v2/`. Its final
+extraction and exact hosted validation remain required. See
+`agent-docs/EXTRACTED_REPAIR.md` for the evidence and reproducible procedure.

@@ -25,6 +25,8 @@
   "//": "Load all PNR corners; put SS first for single-corner intermediate reports. Enforce every final setup corner.",
   "PNR_CORNERS": ["nom_slow_1p08V_125C", "nom_fast_1p32V_m40C", "nom_typ_1p20V_25C"],
   "SETUP_VIOLATION_CORNERS": ["*"],
+  "MAX_SLEW_VIOLATION_CORNERS": ["*"],
+  "MAX_CAP_VIOLATION_CORNERS": ["*"],
 
   "//": "Hold slack margin - Increase them in case you are getting hold violations.",
   "PL_RESIZER_HOLD_SLACK_MARGIN": 0.10,
@@ -44,9 +46,11 @@
   "//": "!!! DO NOT CHANGE ANYTHING BELOW THIS POINT !!!",
   "//": "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
 
-  "//": "Save some time",
+  "//": "Require physical DRC and LVS signoff for the complete design.",
   "RUN_KLAYOUT_XOR": 0,
-  "RUN_KLAYOUT_DRC": 0,
+  "RUN_KLAYOUT_DRC": 1,
+  "RUN_MAGIC_DRC": 1,
+  "RUN_LVS": 1,
 
   "//": "Don't put clock buffers on the outputs",
   "DESIGN_REPAIR_BUFFER_OUTPUT_PORTS": 0,

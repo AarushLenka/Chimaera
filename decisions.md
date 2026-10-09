@@ -1140,3 +1140,37 @@ accepting 283 SS failures with a warning and confirms the new setup override
 rejects them. A functional-proof checkpoint includes the previously untracked
 descriptor miter already required by the verification script, without changing
 its contents. No archived GDS logs are staged, and no push is authorized.
+
+## 2026-10-09 — Preserve input latency and enforce electrical signoff
+
+**Context:** The completed local branch-lookahead route has SS setup WNS
+-6.309755 ns, TNS -599.086280 ns and 300 violations, FF hold WNS -0.047645 ns
+with four violations, 89 SS/21 TT slew violations and ten capacitance
+violations per corner. FF setup is +9.416074 ns, TT setup +3.661690 ns; TT/SS
+hold is +0.125335/+0.440318 ns. Area is 694344 um2, utilization 76.9426%, with
+zero routing DRC and antenna counts. These are local screening numbers, not
+hosted signoff. The new uncommitted frontend stage violates bank alignment
+and changes input observation latency.
+
+**Decision:** Restore the previously verified frontend rather than retain the
+extra register stage. Explicitly require all-corner slew/capacitance gates and
+Magic DRC, KLayout DRC and LVS in local and production configurations. Inspect
+the exact extracted loads and evaluate physical sizing/buffering on a separate
+layout copy; do not modify RTL scheduling or the 20 ns clock.
+
+**Alternatives considered:** Merely repairing the pipeline reset would still
+leave the extra cycle. Keeping the PDK's disabled slew/capacitance defaults
+would still accept electrical violations. Positive repair-time estimates do
+not establish closure, particularly when new wiring has no extracted RC.
+
+**Consequences:** Functional behavior is restored and the full local gate
+passes. Actual checker regressions reject each recorded violation type under
+both configurations. The repair screen performs 135 resize operations on
+117 distinct cells, 11 pin swaps and 40 buffer insertions; its pre-reroute area
+is 695478 um2 (+0.16%), with the same 5795 sequential cells. The mapped
+functional smoke passes. The reusable repair script reproduces the candidate
+netlist exactly, but must be followed by a fresh route, extraction and signoff.
+It is local screening tooling, not an automatic hosted repair stage.
+
+**Status:** requested by Hausen; functional and gate corrections verified;
+physical repair undergoing fresh extracted validation; Phase 7 remains open
