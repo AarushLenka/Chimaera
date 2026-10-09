@@ -4,6 +4,7 @@
 *.fst
 *.fst.hier
 runs
+.physical-checkpoints/
 tt_submission
 src/user_config.json
 src/config_merged.json

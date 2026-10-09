@@ -951,3 +951,53 @@ while retaining the power grid before a fresh route. The separate corrected
 screen is `/tmp/chimaera-ss-fix.JiNkH8/runs/extracted-repair-v2/`. Its final
 extraction and exact hosted validation remain required. See
 `agent-docs/EXTRACTED_REPAIR.md` for the evidence and reproducible procedure.
+
+## 2026-10-09 — Finish setup repair, pursue remaining physical gates
+
+The fresh `extracted-repair-v2` route confirms that the major SS setup failure
+is repaired: SS worst slack is +0.273237 ns, with FF/TT/SS setup WNS/TNS and
+violation counts all zero. FF still has two hold failures (-0.036307 ns WNS,
+-0.049251 ns TNS), SS has 22 slew failures, and each corner has five
+capacitance failures. Standard-cell area is 696071 um2 at 77.1341%
+utilization; the 902417 um2 instance metric includes fillers. The run omitted
+final DRC/LVS and timing/electrical checker stages, so Phase 7 remains open.
+
+The remaining hold endpoints are two loaded shift-register inputs. Six logic
+drivers account for the SS slew failures and five buffer outputs exceed
+0.300000 pF, with a maximum measured load of 0.329483 pF. Applying the existing
+repair script to this fresh extraction resizes 11 cells and inserts 17
+electrical buffers plus 30 hold buffers. Pre-route area is 696733 um2
+(+0.095%), with no added sequential state or effective constraint change.
+The repaired mapped netlist passes serial load, commit, resume, event action
+and timeout.
+
+The first restart's JSON-looking CLI list overrides were parsed as literal
+strings. That run was stopped during global routing. A corrected JSON
+overlay verifies actual `["*"]` corner coverage in `resolved.json` and enables
+Magic DRC, KLayout DRC and LVS. Fresh routing/full signoff runs in
+`/tmp/chimaera-ss-fix.JiNkH8/runs/extracted-closure-v3-all/`, without a final
+stage limit. The only skipped repair is the estimate-based post-GRT timing
+repair. Final extraction and physical checker results are pending.
+
+An artifact audit now reports PASS, FAIL or INCOMPLETE from final per-corner
+metrics, completed physical stages, checker coverage, footprint and output
+views. Its first checks correctly reject the previous run's hold/electrical
+violations and missing DRC/LVS, and flag the stopped restart as incomplete.
+
+## 2026-10-09 — Save a rollback point before the next timing change
+
+V3's detailed route and fresh extraction completed with SS setup at
+-0.038121 ns (one failure), clean hold across FF/TT/SS, 15 SS slew failures,
+and FF/TT/SS capacitance counts 4/3/3. Area is 697169 um2 at 77.2557%
+utilization, with zero routed DRC and antenna counts. Magic streamout was
+stopped before full physical signoff because timing/electrical gates already
+fail. No subsequent layout repair has been applied.
+
+Before further changes, Hausen requested a commit to make rollback possible.
+The complete physical experiment and matched PDK are archived on the workspace
+filesystem, outside volatile `/tmp`; `tar --diff` confirms the backup matches
+the originals. Both v2's +0.273237 ns SS setup result and v3's clean hold result
+are retained. The checkpoint records all-corner metrics, tool identity, hashes
+and restoration instructions in `agent-docs/PHYSICAL_CHECKPOINT_2026-10-09.md`.
+The existing uncommitted evidence documentation and audit helper are included
+in the Git checkpoint; the 783 MB physical archive remains local and ignored.

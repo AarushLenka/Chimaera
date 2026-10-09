@@ -1174,3 +1174,66 @@ It is local screening tooling, not an automatic hosted repair stage.
 
 **Status:** requested by Hausen; functional and gate corrections verified;
 physical repair undergoing fresh extracted validation; Phase 7 remains open
+
+## 2026-10-09 — Repair residual hold and electrical violations from fresh RCX
+
+**Context:** `extracted-repair-v2` closes FF/TT/SS setup with worst slack
+10.853827/7.625293/0.273237 ns and zero setup TNS/violations. FF hold still
+has two violations, WNS -0.036307 ns and TNS -0.049251 ns. SS has 22 slew
+violations and each corner has five capacitance violations. Standard-cell
+area is 696071 um2 at 77.1341% core utilization. Full DRC/LVS and final
+checker stages were omitted from that screen.
+
+**Decision:** Reapply the existing extracted-load repair to this fresh route,
+then reroute and re-extract with all-corner timing/electrical checkers and
+Magic DRC, KLayout DRC and LVS enabled. Preserve the clock, ABI, RTL and
+pending-first behavior. Keep repair-time timing provisional.
+
+**Alternatives considered:** The native post-GRT screen still fails SS setup
+around -6.17 ns and omitted extraction/signoff. It cannot replace this
+extracted baseline. An added frontend pipeline has already failed alignment
+and is not part of the physical repair.
+
+**Consequences:** The second repair resizes 11 instances and inserts 17
+electrical buffers and 30 hold buffers. Pre-route standard-cell area is
+696733 um2 (+0.095%), with 5795 sequential cells and identical effective
+SDC constraints. Mapped top-level serial load, commit, resume, event action
+and timeout pass. Fresh route and full signoff run in
+`/tmp/chimaera-ss-fix.JiNkH8/runs/extracted-closure-v3-all/`; final results
+are pending. The corner arrays in `resolved.json` are verified as `["*"]`.
+
+**Status:** within requested physical repair; reroute/extraction and full
+signoff in progress; Phase 7 remains open
+
+The reusable `scripts/audit-physical-signoff.py` requires both final measured
+metrics and completed signoff stages, rejecting missing data rather than
+treating it as zero. It rejects the actual residual failures/omissions in
+`extracted-repair-v2` and the stopped malformed-override run. Functional proof
+and source-build provenance remain separate obligations.
+
+## 2026-10-09 — Preserve source and routed candidates before residual repair
+
+**Context:** The v3 fresh extraction leaves one SS setup failure at
+-0.038121 ns, with all-corner hold passing, 15 SS slew failures and FF/TT/SS
+capacitance counts 4/3/3. Area is 697169 um2 at 77.2557% utilization; routing
+DRC and antenna counts are zero. V2 retains the better SS setup margin
+(+0.273237 ns) but two FF hold failures. Neither passes full physical signoff.
+
+**Decision:** Stop the v3 Magic streamout, commit the existing source and
+documentation state, and archive the complete physical evidence and matched
+PDK on the workspace filesystem before applying further repair.
+
+**Alternatives considered:** A Git-only checkpoint cannot restore the routed
+ODB/SPEF that produced the measured slack. Keeping the only copy under `/tmp`
+would lose that rollback point after a reboot.
+
+**Consequences:** Both routed candidates and the earlier baseline are preserved
+in the ignored `.physical-checkpoints/2026-10-09-pre-residual-repair/` archive.
+The archive compares identically with the original files. Its hash, exact view
+hashes, results and restore procedure are recorded in
+`agent-docs/PHYSICAL_CHECKPOINT_2026-10-09.md`. Source/configuration/repair-script
+hashes match the experiment inputs; no additional repair has been applied.
+The archive is local and must be copied separately when moving machines.
+
+**Status:** explicitly requested by Hausen; checkpoint prepared and verified;
+Phase 7 remains open

@@ -83,3 +83,88 @@ input route. Functional mapped simulation passes serial load, commit/resume,
 event action and timeout without delay annotation. Fresh extraction is
 required before treating this as a physical improvement; the script is a local
 screen and is not automatically part of the hosted Tiny Tapeout flow.
+
+## 2026-10-09 — Fresh extracted baseline and remaining repair
+
+The corrected `extracted-repair-v2` route completed detailed routing and RCX.
+Its final extracted metrics are:
+
+| Corner | Setup worst slack (ns) | Setup violations | Hold worst slack (ns) | Hold TNS (ns) | Hold violations | Slew violations | Capacitance violations |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| FF | 10.853827 | 0 | -0.036307 | -0.049251 | 2 | 0 | 5 |
+| TT | 7.625293 | 0 | 0.184567 | 0 | 0 | 0 | 5 |
+| SS | 0.273237 | 0 | 0.580389 | 0 | 0 | 22 | 5 |
+
+Setup TNS and WNS are zero at every corner. Positive setup margin is recorded
+under `timing__setup__ws`, rather than the negative-only WNS metric. The
+696071 um2 standard-cell area occupies 77.1341% of the 902417 um2 core;
+`design__instance__area` includes fillers and must not be described as logic
+area. Routing DRC, antenna, and critical disconnected-pin counts are zero.
+This run stopped at STA and omitted final timing/electrical checkers, DRC and
+LVS. Phase 7 remains open.
+
+The two FF hold endpoints are `_54758_/D` (`current_shift_0[2]`) and
+`_54771_/D` (`current_shift_1[7]`). The 22 SS slew violations are driven by
+`input_frontend.loaded_bank/_053_`, `_43346_`, `_44307_`, `_28917_`,
+`_28470_` and `_28466_`. Capacitance violations affect `fanout3247`,
+`fanout4193`, `fanout3880`, `fanout4129` and `fanout3856`; the worst load is
+0.329483 pF against a 0.300000 pF limit. These cells/nets are not marked
+`dont_touch` in the input ODB.
+
+A second invocation of `scripts/repair-extracted.tcl`, using this fresh
+extraction, produces `/tmp/chimaera-ss-fix.JiNkH8/closure-v3.*`. It resizes
+11 instances and adds 17 electrical buffers and 30 hold buffers, with
+pre-route standard-cell area 696733 um2 (+0.095%). Both netlists retain 5795
+sequential cells. The saved SDC differs only by a generated date comment.
+The mapped `phase5_loader_top_tb` passes serial load, commit, resume, event
+action and timeout using the same functional IHP cell models as the earlier
+screen, without SDF annotation.
+
+Fresh routing and full signoff are running in
+`/tmp/chimaera-ss-fix.JiNkH8/runs/extracted-closure-v3-all/`. This run uses the
+original screening configuration plus a JSON overlay explicitly enabling
+Magic DRC, KLayout DRC, LVS, and `["*"]` coverage for setup, hold, slew and
+capacitance. Check `resolved.json` for the actual arrays: LibreLane 3.0.14
+CLI `--override-config` treats a JSON-looking list as a list containing that
+literal string, which does not match corner names. An initial restart with
+that malformed override was stopped during GRT and is excluded from evidence.
+The corrected run skips only `OpenROAD.ResizerTimingPostGRT` and has no
+`--to` limit. Final rerouted/extracted metrics and physical reports remain
+pending; the repair-time reports are provisional.
+
+## Audit the completed artifacts
+
+```sh
+rtk proxy python3 -B scripts/audit-physical-signoff.py /absolute/path/to/run
+```
+
+The audit returns 0 for recorded physical gates passing, 1 for measured
+violations or incompatible constraints, and 2 for incomplete evidence. It
+requires finite FF/TT/SS setup/hold slack, zero timing/electrical violation
+counts and TNS, completed routing/extraction/STA and physical checker stages,
+clean antenna/connectivity/DRC/LVS metrics, all-corner checker coverage, the
+20 ns clock and 6x4 footprint, and nonempty final GDS/ODB/netlist/SDC/SPEF
+views. The failing `extracted-repair-v2` artifacts are rejected with their
+exact residual failures and omitted physical stages; the stopped malformed
+CLI-override run is identified as incomplete.
+
+For hosted artifacts, add `--expected-commit FULL_SHA` to check the exact
+`final/commit_id.json` marker. Source-manifest selection and input hashes must
+still be verified separately, alongside functional proof. A local physical
+pass does not establish an exact hosted-build pass.
+
+## 2026-10-09 — Stop v3 and preserve the rollback checkpoint
+
+V3 completed routing and extraction. SS setup is -0.038121 ns with one
+violation; all-corner hold passes. SS still has 15 slew violations and
+FF/TT/SS have 4/3/3 capacitance violations. Standard-cell area is 697169 um2
+at 77.2557% utilization. Routing DRC and antenna counts remain zero. The
+run was stopped during Magic streamout because these measured failures
+already prevent closure; full GDS/DRC/LVS remains incomplete.
+
+Hausen requested a commit before further changes. Both v2's better SS setup
+margin and v3's clean hold result, with their exact views and matched PDK,
+are archived outside `/tmp`. See
+[the physical rollback checkpoint](PHYSICAL_CHECKPOINT_2026-10-09.md) for
+the complete corner table, archive SHA-256, view hashes and restore procedure.
+No subsequent physical repair has been applied.

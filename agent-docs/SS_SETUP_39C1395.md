@@ -95,7 +95,15 @@ Matched local AREA-0 synthesis with LibreLane 3.0.14 and the exact timing librar
 | Branch lookahead | 541146.8788 | 5795 |
 
 The measured increase is `8515.2436 um2` (`1.60%`). These are synthesis areas,
-not routed fit evidence. Local routing/extraction is running in
+not routed fit evidence. Local routing/extraction completed in
 `/tmp/chimaera-ss-fix.JiNkH8/runs/branch-lookahead-v2/`; its floorplan and PDK
 libraries match the artifact, but LibreLane/OpenROAD versions differ from the
 hosted 3.1.0.dev3 flow. Exact-commit hosted signoff remains required for Phase 7.
+
+The completed screen still fails SS setup at -6.309755 ns with 300 violations,
+FF hold at -0.047645 ns with four violations, and slew/capacitance checks.
+The worst path now starts at synchronized input bit 2 through rising-edge
+detection, event/grant logic and descriptor selection/read. See
+[the extracted-repair evidence](EXTRACTED_REPAIR.md) for per-corner results,
+the restored frontend behavior, mandatory signoff gates, and subsequent
+physical repair screens. Branch lookahead alone has not closed timing.
