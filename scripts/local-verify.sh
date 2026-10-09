@@ -40,6 +40,9 @@ python3 scripts/check_descriptor_read.py "$yosys_netlist"
 echo "== branch lookahead topology and equivalence =="
 python3 scripts/check_branch_lookahead.py "$yosys_netlist"
 
+echo "== event matcher topology and equivalence =="
+python3 scripts/check_event_matcher.py "$yosys_netlist"
+
 if [[ "${RUN_COCOTB:-0}" == "1" ]]; then
   echo "== cocotb simulation =="
   if ! command -v cocotb-config >/dev/null 2>&1; then
@@ -48,7 +51,7 @@ if [[ "${RUN_COCOTB:-0}" == "1" ]]; then
   fi
   make -C test clean
   make -C test
-  if grep -q failure test/results.xml; then
+  if grep -Eq '<(failure|error)([[:space:]>])' test/results.xml; then
     echo "cocotb reported failures in test/results.xml" >&2
     exit 1
   fi

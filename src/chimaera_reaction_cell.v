@@ -9,6 +9,47 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
+// Terminate the synchronized-pin bus in a small local combinational matcher.
+// Keep this boundary through mapping so ABC cannot distribute pin/edge logic
+// into the action, timeout and descriptor-reload cones. There is no storage:
+// the reaction still observes and commits its event on the same clock edge.
+/* verilator lint_off DECLFILENAME */
+(* keep_hierarchy = "yes" *)
+module chimaera_event_matcher (
+    input  wire [3:0] event_kind,
+    input  wire [7:0] event_mask,
+    input  wire [7:0] event_value,
+    input  wire [7:0] level_mask,
+    input  wire [7:0] level_value,
+    input  wire [7:0] sync_inputs,
+    input  wire [7:0] rise_edges,
+    input  wire [7:0] fall_edges,
+    output reg       event_match
+);
+  always @(*) begin
+    case (event_kind)
+      4'd1: event_match = |(rise_edges & event_mask);
+      4'd2: event_match = |(fall_edges & event_mask);
+      4'd3: event_match =
+          ((sync_inputs & event_mask) == (event_value & event_mask));
+      4'd4: event_match =
+          (|(rise_edges & event_mask)) &&
+          ((sync_inputs & level_mask) == (level_value & level_mask));
+      4'd5: event_match =
+          (|(fall_edges & event_mask)) &&
+          ((sync_inputs & level_mask) == (level_value & level_mask));
+      4'd6: event_match =
+          (|(rise_edges & event_mask)) ||
+          ((sync_inputs & level_mask) == (level_value & level_mask));
+      4'd7: event_match =
+          (|(fall_edges & event_mask)) ||
+          ((sync_inputs & level_mask) == (level_value & level_mask));
+      default: event_match = 1'b0;
+    endcase
+  end
+endmodule
+/* verilator lint_on DECLFILENAME */
+
 module chimaera_reaction_cell #(
     parameter integer STATE_WIDTH = 4,
     parameter integer TIMER_WIDTH = 16,
@@ -51,13 +92,6 @@ module chimaera_reaction_cell #(
 );
 
   localparam [3:0] EVENT_NONE             = 4'd0;
-  localparam [3:0] EVENT_RISE             = 4'd1;
-  localparam [3:0] EVENT_FALL             = 4'd2;
-  localparam [3:0] EVENT_LEVEL            = 4'd3;
-  localparam [3:0] EVENT_RISE_WHILE_LEVEL = 4'd4;
-  localparam [3:0] EVENT_FALL_WHILE_LEVEL = 4'd5;
-  localparam [3:0] EVENT_RISE_OR_LEVEL    = 4'd6;
-  localparam [3:0] EVENT_FALL_OR_LEVEL    = 4'd7;
 
   reg                         active;
   reg [STATE_WIDTH-1:0]       state_id;
@@ -91,29 +125,19 @@ module chimaera_reaction_cell #(
   reg [7:0]                   late_release_timer;
   reg [7:0]                   effective_late_mask;
 
-  reg event_match;
-
-  always @(*) begin
-    case (event_kind)
-      EVENT_RISE: event_match = |(rise_edges & event_mask);
-      EVENT_FALL: event_match = |(fall_edges & event_mask);
-      EVENT_LEVEL: event_match =
-          ((sync_inputs & event_mask) == (event_value & event_mask));
-      EVENT_RISE_WHILE_LEVEL: event_match =
-          (|(rise_edges & event_mask)) &&
-          ((sync_inputs & level_mask) == (level_value & level_mask));
-      EVENT_FALL_WHILE_LEVEL: event_match =
-          (|(fall_edges & event_mask)) &&
-          ((sync_inputs & level_mask) == (level_value & level_mask));
-      EVENT_RISE_OR_LEVEL: event_match =
-          (|(rise_edges & event_mask)) ||
-          ((sync_inputs & level_mask) == (level_value & level_mask));
-      EVENT_FALL_OR_LEVEL: event_match =
-          (|(fall_edges & event_mask)) ||
-          ((sync_inputs & level_mask) == (level_value & level_mask));
-      default:     event_match = 1'b0;
-    endcase
-  end
+  wire event_match;
+  (* keep_hierarchy = "yes" *)
+  chimaera_event_matcher event_matcher (
+      .event_kind(event_kind),
+      .event_mask(event_mask),
+      .event_value(event_value),
+      .level_mask(level_mask),
+      .level_value(level_value),
+      .sync_inputs(sync_inputs),
+      .rise_edges(rise_edges),
+      .fall_edges(fall_edges),
+      .event_match(event_match)
+  );
 
   assign fire_from_timeout = active && !event_match && (timer == {{(TIMER_WIDTH-1){1'b0}}, 1'b1});
   assign fire              = active && (event_match || fire_from_timeout);
