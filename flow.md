@@ -1080,3 +1080,32 @@ Full signoff continues as `v2-closure-signoff`, resuming at IR-drop analysis
 and currently exporting GDS through Magic. This is a local saved-route
 physical closure result. Full DRC/LVS, exact hosted validation and automatic
 integration into the ordinary RTL-to-GDS flow are still pending.
+
+## 2026-10-09 — Start RTL reproduction through the standard Tiny Tapeout build
+
+Hausen stopped the long `v2-closure-signoff` Magic streamout. Its partial files
+remain preserved; full GDS/DRC/LVS never completed. After comparing the RTL and
+custom-ECO approaches, Hausen authorized the RTL-first route while retaining the
+Tiny Tapeout template. The prior passing extraction is still the rollback
+reference, not evidence that a fresh project build closes timing.
+
+The first candidate keeps each reaction cell's event comparison in a separate
+combinational hierarchy boundary. It retains every event equation and adds no
+state or latency. The actual baseline routed edge net has four immediate loads
+and large wire capacitance; final physical measurements will determine whether
+the boundary localizes its consumers enough to help.
+
+Local verification with Cocotb required passes all host tests, demos, RTL
+benches, runtime equivalence, lint and synthesis checks. A new universal SAT
+proof covers arbitrary pin/mask/value inputs and all sixteen event kinds;
+the topology gate confirms four combinational matchers. Generic count remains
+41475. The six Cocotb tests also pass; the existing XML substring check falsely
+reported `failures="0"` as an error and was corrected to detect failure/error
+elements. The functional log is
+`/tmp/chimaera-event-match.qdezvn/functional.log`.
+
+Preparation for the clean physical run uses the official TT support-tools
+checkout `d66cf179e7bc4d296362ab7e2e3b344dc3c4f665` in the temporary evidence
+directory and LibreLane 3.1.0.dev3, the hosted version. The production GDS
+workflow, top-level pins, clock, ABI and tile footprint are unchanged. Routed
+timing/electrical and complete signoff results remain pending.

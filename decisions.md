@@ -1238,6 +1238,45 @@ The archive is local and must be copied separately when moving machines.
 **Status:** explicitly requested by Hausen; checkpoint prepared and verified;
 Phase 7 remains open
 
+## 2026-10-09 — Test an RTL event-matching boundary in the standard TT flow
+
+**Context:** Hausen requested a reproducible implementation while preserving the
+Tiny Tapeout template and accepted the RTL-first approach. The prior passing
+route includes extracted-load resizing/repair followed by thirteen final ECO
+buffers; its generated names and coordinates cannot be replayed reliably against
+an arbitrary fresh RTL build. The saved baseline's actual SS critical report
+shows four immediate receivers on `loaded_rise_edges[2]`, 0.267974 pF load,
+3.409807 ns slew and 2.634577 ns driver delay. The earlier "3600 loads" shorthand
+does not describe this net's immediate routed fanout.
+
+**Decision:** First test a retained combinational event matcher per reaction
+cell. Preserve the existing event-kind equations and all state/cycle behavior;
+keep the pin comparison boundary through ABC mapping so pin-dependent logic
+cannot be distributed into downstream action/reload logic. Use the unchanged
+Tiny Tapeout source manifest/configuration generator, physical pin template,
+6x4 die, 20 ns clock and existing hosted workflow for a fresh build. Keep custom
+saved-route ECO replay as a fallback rather than production integration.
+
+**Alternatives considered:** Copying the hardcoded ECO targets/placements would
+couple the build to one synthesis and routed database. Adding an input pipeline
+would violate the same-edge observation/action contract. The standard resizer
+remains responsible for physical hold/electrical repair; the RTL boundary alone
+does not guarantee closure.
+
+**Consequences:** Local verification with Cocotb required passes: 30 host tests,
+five demos, standalone RTL and 260-cycle runtime equivalence, Phase 4 smoke,
+Verilator, synthesis, descriptor/branch SAT and event-matcher SAT. All four
+matchers survive generic synthesis with no storage; generic cell count remains
+41475, equal to the prior screening log. The Cocotb gate's old substring check
+mistook `failures="0"` for a failure; it now checks actual failure/error elements.
+All six Cocotb tests pass. These functional/generic results do not establish
+physical fit or timing. The new local image is LibreLane 3.1.0.dev3, matching the
+hosted version, digest
+`sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a`.
+
+**Status:** authorized RTL candidate; functional PASS; clean physical build
+pending; Phase 7 remains open
+
 ## 2026-10-09 — Isolate the residual v3 wire loads with a targeted ECO
 
 **Context:** The checkpoint preserves a v3 route with one SS setup failure

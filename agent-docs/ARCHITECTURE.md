@@ -54,6 +54,13 @@ be preserved through every RTL change — treat any code path that makes this la
 data-dependent or contention-dependent as a correctness bug, not a style issue (see
 `AGENTS.md` §4).
 
+Each reaction cell's event-kind/mask/level comparison is a retained combinational
+`chimaera_event_matcher` module. This synthesis boundary separates synchronized
+pin matching from the action, timeout and descriptor-reload cones; it adds no
+register or reaction cycle. Universal SAT checks all sixteen event-kind encodings
+and arbitrary pin, mask and value vectors. The boundary is a timing candidate;
+its benefit still requires fresh routed/extracted validation.
+
 ## 3. Shared execution engine
 
 A shared execution block serves both reaction cells whenever a cell needs
