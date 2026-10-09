@@ -1001,3 +1001,82 @@ are retained. The checkpoint records all-corner metrics, tool identity, hashes
 and restoration instructions in `agent-docs/PHYSICAL_CHECKPOINT_2026-10-09.md`.
 The existing uncommitted evidence documentation and audit helper are included
 in the Git checkpoint; the 783 MB physical archive remains local and ignored.
+
+## 2026-10-09 — Resume timing repair from the preserved route
+
+After checkpoint `4d7433e`, the remaining SS setup gate is strengthened and
+eight BUF-4 cells isolate weak-driver wires and partition long cap loads.
+The repair script rejects mismatched target masters and receiver nets. Its
+first trial exposed an unavailable NAND3-2 and OpenROAD's generated buffer
+name suffixes; both are handled in the accepted script. The original v3
+route is preserved, and only the accepted `closure-v4c` candidate is routed.
+
+The ECO adds 121 um2 before routing (+0.0174%) and retains 5795 flip-flops
+and the effective SDC. A connectivity/library-function check confirms the
+47252 existing non-filler cells are logically unchanged after collapsing
+the eight identity buffers. Mapped serial load, commit/resume, event action
+and timeout pass using the matched functional cell/UDP models.
+
+Fresh routing, RCX and all-corner STA run in `extracted-closure-v4c`, stopping
+before streamout. An extracted-only audit rejects failures before spending
+time on GDS; full DRC/LVS and final GDS remain mandatory afterward. No
+timing/electrical closure is claimed from the provisional ECO reports.
+
+## 2026-10-09 — V4c finishes with a different limiting path
+
+The reroute completed, but SS worst setup regressed from -0.038121 to
+-0.224404 ns, with two failures instead of one. All-corner hold passes;
+SS slew rises to 27 and FF/TT/SS capacitance counts are 9/8/8. Area is
+697715 um2. Route DRC, antenna and critical connectivity remain clean.
+The extracted audit rejects the result, and full GDS/DRC/LVS remains pending.
+
+The target NAND2B gate's recorded delay improves by about 0.706 ns, while
+the worst endpoint changes to `_54830_`; the old worst endpoint now has
++0.405237 ns on its reported maximum path. This explains why a useful local
+gate change still fails to close the whole design. The next investigation
+returns to v2's +0.273237 ns setup baseline, isolating its two FF hold
+endpoints and electrical loads while examining how to preserve unaffected
+routes. No next physical run has started, and the checkpoint is intact.
+
+## 2026-10-09 — Start the hold repair with incremental routing
+
+The installed LibreLane ECO step supports locking existing placements and
+incremental rerouting after endpoint buffer insertion. Starting from the
+preserved v2 pre-filler route, it adds two delay cells on the failing shift
+register data inputs. Preparation moves zero original cells and changes
+only the two original data nets. Connectivity/library-function checks and
+mapped top-level simulation pass, with all 5795 flip-flops retained.
+
+The candidate is now being detailed-routed and re-extracted as
+`v2-hold-eco-route`. Separately, the measured v2 driver/load coordinates
+define an electrical ECO script for the next experiment. That script uses
+six nearby output buffers and five selected load-group partitions; it is
+not yet applied. Final extracted timing decides whether the two-delay
+candidate preserves the original setup margin.
+
+The hold-only result passes all-corner setup and hold after extraction,
+preserving SS margin at +0.273740 ns. FF hold is +0.011746 ns, so later
+electrical edits must not consume this small remaining margin. Ten original
+routes changed after DRC repair, and zero original placements changed.
+The next isolated candidate adds eleven buffers to the measured electrical
+loads while locking all original cells. Preparation and connectivity checks
+pass; simulation and fresh routing/extraction decide whether it is accepted.
+
+## 2026-10-09 — Reach all-corner timing and electrical closure locally
+
+The eleven-buffer electrical ECO passes fresh extraction. SS setup retains
++0.265928 ns margin and FF hold is +0.012662 ns; FF/TT/SS setup/hold TNS
+and violation counts, slew counts and cap counts are all zero. Area is
+696263 um2 at 77.1554% utilization. No existing placement changed; 44
+original routes changed during the incremental route and DRC repair.
+
+The final ODB also passes read-only VPWR/VGND connectivity checks and
+matches the 6x4 die bounds. A SHA-256-bound probe resolves the missing
+resumed-run physical metrics, and the extracted-only audit passes. Supplying
+a different route's probe is correctly rejected. The successful route and
+probe are archived outside /tmp alongside the earlier checkpoints.
+
+Full signoff continues as `v2-closure-signoff`, resuming at IR-drop analysis
+and currently exporting GDS through Magic. This is a local saved-route
+physical closure result. Full DRC/LVS, exact hosted validation and automatic
+integration into the ordinary RTL-to-GDS flow are still pending.

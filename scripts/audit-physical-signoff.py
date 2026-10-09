@@ -8,6 +8,7 @@ the hosted commit marker when one is available.
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -54,6 +55,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--expected-commit", help="Full hosted source commit SHA")
+    parser.add_argument(
+        "--grid-probe", type=Path,
+        help="Read-only OpenROAD grid/bbox metrics bound to the final ODB SHA-256",
+    )
+    parser.add_argument(
+        "--route-run", type=Path,
+        help="Prior routing run with byte-identical ODB/netlist/SDC/SPEF final views",
+    )
+    parser.add_argument(
+        "--extracted-only",
+        action="store_true",
+        help="Gate fresh routed timing/electrical metrics before GDS and full signoff",
+    )
     args = parser.parse_args()
     failures = []
     missing = []
@@ -70,6 +84,24 @@ def main():
 
     config = read_json(args.run_dir / "resolved.json")
     metrics = read_json(args.run_dir / "final/metrics.json")
+    if args.grid_probe:
+        supplemental = read_json(args.grid_probe)
+        top = config.get("DESIGN_NAME", "tt_um_chimaera")
+        odb = args.run_dir / "final/odb" / f"{top}.odb"
+        try:
+            with odb.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        except OSError as error:
+            missing.append(f"final ODB for grid-probe binding: {error}")
+        else:
+            if supplemental.get("chimaera__checked_odb__sha256") != digest:
+                failures.append("grid probe does not match the final ODB SHA-256")
+            else:
+                # Only fill these two absent physical metrics. Timing/electrical
+                # and all other signoff results always come from final metrics.
+                for key in ("design__die__bbox", "design__power_grid_violation__count"):
+                    if key in supplemental and key not in metrics:
+                        metrics[key] = supplemental[key]
 
     def number(key):
         value = metrics.get(key)
@@ -110,12 +142,59 @@ def main():
                 if not any(fnmatch.fnmatchcase(corner, pattern) for pattern in patterns):
                     missing.append(f"{key} does not cover {corner}")
 
-    completed = set()
-    for path in sorted(args.run_dir.glob("*/config.json")):
-        if (path.parent / "state_out.json").is_file():
-            step = read_json(path).get("meta", {}).get("step")
-            completed.add(step)
-    for step in REQUIRED_STEPS:
+    def completed_steps(run):
+        result = set()
+        for path in sorted(run.glob("*/config.json")):
+            if (path.parent / "state_out.json").is_file():
+                result.add(read_json(path).get("meta", {}).get("step"))
+        return result
+
+    completed = completed_steps(args.run_dir)
+    if args.route_run:
+        prior_config = read_json(args.route_run / "resolved.json")
+        prior_metrics = read_json(args.route_run / "final/metrics.json")
+        prior_valid = True
+        if prior_config.get("DESIGN_NAME") != config.get("DESIGN_NAME"):
+            failures.append("prior routing run has a different design name")
+            prior_valid = False
+        top = config.get("DESIGN_NAME", "tt_um_chimaera")
+        for relative in (f"odb/{top}.odb", f"nl/{top}.nl.v", f"sdc/{top}.sdc", f"spef/nom/{top}.nom.spef"):
+            try:
+                digests = []
+                for run in (args.run_dir, args.route_run):
+                    with (run / "final" / relative).open("rb") as stream:
+                        digests.append(hashlib.file_digest(stream, "sha256").hexdigest())
+            except OSError as error:
+                missing.append(f"prior routing view binding {relative}: {error}")
+                prior_valid = False
+            else:
+                if digests[0] != digests[1]:
+                    failures.append(f"prior routing view differs: {relative}")
+                    prior_valid = False
+        # Signoff must retain the extracted results of that exact physical view.
+        relevant = [key for key in prior_metrics if key.startswith((
+            "timing__", "design__max_slew_violation", "design__max_cap_violation",
+        ))]
+        if not relevant:
+            missing.append("prior routing timing/electrical metrics")
+            prior_valid = False
+        for key in relevant:
+            if metrics.get(key) != prior_metrics[key]:
+                failures.append(f"prior routing metric differs: {key}")
+                prior_valid = False
+        if prior_valid:
+            route_steps = {
+                "OpenROAD.DetailedRouting", "OpenROAD.RCX", "OpenROAD.STAPostPNR",
+                "Checker.TrDRC", "Checker.DisconnectedPins",
+            }
+            completed.update(completed_steps(args.route_run) & route_steps)
+    required_steps = REQUIRED_STEPS
+    if args.extracted_only:
+        required_steps = (
+            "OpenROAD.DetailedRouting", "OpenROAD.RCX", "OpenROAD.STAPostPNR",
+            "Checker.TrDRC", "Checker.DisconnectedPins",
+        )
+    for step in required_steps:
         if step not in completed:
             missing.append(f"completed stage {step}")
 
@@ -137,6 +216,11 @@ def main():
         print(f"{corner}: setup/hold slack {slacks}; setup/hold/slew/cap counts {counts}")
 
     for key in ZERO_METRICS:
+        if args.extracted_only and key in (
+            "magic__drc_error__count", "klayout__drc_error__count",
+            "magic__illegal_overlap__count", "design__lvs_error__count",
+        ):
+            continue
         zero(key)
     utilization = number("design__instance__utilization__stdcell")
     if utilization is not None and not 0 < utilization <= 1:
@@ -157,6 +241,8 @@ def main():
         f"sdc/{top}.sdc",
         f"spef/nom/{top}.nom.spef",
     ):
+        if args.extracted_only and relative == f"gds/{top}.gds":
+            continue
         path = args.run_dir / "final" / relative
         if not path.is_file() or path.stat().st_size == 0:
             missing.append(f"nonempty final/{relative}")
@@ -178,7 +264,10 @@ def main():
     if missing:
         print("INCOMPLETE: required physical evidence is missing")
         return 2
-    print("PASS: recorded physical gates; functional proof and source provenance remain separate")
+    if args.extracted_only:
+        print("PASS: extracted timing/electrical gates; full physical signoff still required")
+    else:
+        print("PASS: recorded physical gates; functional proof and source provenance remain separate")
     return 0
 
 

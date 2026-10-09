@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "version": 2,
+    "flow": "Classic",
+    "substituting_steps": {
+      "+OpenROAD.STAMidPNR-3": "Odb.InsertECOBuffers"
+    }
+  },
+  "INSERT_ECO_BUFFERS": [
+    {
+      "target": "_54758_/D",
+      "buffer": "sg13cmos5l_dlygate4sd3_1"
+    },
+    {
+      "target": "_54771_/D",
+      "buffer": "sg13cmos5l_dlygate4sd3_1"
+    }
+  ]
+}

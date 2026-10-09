@@ -1237,3 +1237,135 @@ The archive is local and must be copied separately when moving machines.
 
 **Status:** explicitly requested by Hausen; checkpoint prepared and verified;
 Phase 7 remains open
+
+## 2026-10-09 — Isolate the residual v3 wire loads with a targeted ECO
+
+**Context:** The checkpoint preserves a v3 route with one SS setup failure
+(-0.038121 ns), clean all-corner hold, 15 SS slew failures and FF/TT/SS cap
+counts 4/3/3. The setup gate `_46743_` drives 0.198567 pF with 1.847082 ns
+SS delay. The electrical failures include weak drivers feeding long wires.
+
+**Decision:** Upsize that measured NAND2B gate and insert eight BUF-4 cells:
+four isolate weak logic outputs and four split geographically dispersed cap
+loads. Preserve the saved sequential state, hold buffers and constraints.
+Route/extract/check timing before restarting expensive GDS/full signoff.
+
+**Alternatives considered:** The matched library has no NAND3-2, so those
+outputs require buffers instead of an unavailable resize. Repeating broad
+hold repair would modify already-passing paths; current changes target the
+actual violating loads. Repair-time STA retains stale RC on modified nets
+and cannot establish closure.
+
+**Consequences:** The accepted pre-route v4c candidate uses 697290 um2
+(+121 um2, +0.0174%), retaining 5795 sequential cells. Netlist connectivity
+after collapsing identity buffers and the resized Boolean functions match
+the saved route. Top-level mapped loading/event/timeout simulation passes.
+Fresh detailed route/RCX/STA is running; extracted results are pending. The
+new `--extracted-only` audit gates timing/electrical results before GDS,
+while the default audit still requires full physical signoff.
+
+**Status:** within Hausen's requested timing repair; locally proven ECO,
+fresh physical validation in progress; Phase 7 remains open
+
+## 2026-10-09 — Reject the v4c physical regression
+
+**Context:** Fresh v4c extraction gives SS setup -0.224404 ns, TNS
+-0.444715 ns and two failures, versus v3's -0.038121 ns and one failure.
+FF/TT/SS hold passes (+0.112277/+0.309873/+0.640001 ns). SS slew increases
+to 27; FF/TT/SS cap counts are 9/8/8. Standard-cell area is 697715 um2.
+
+**Decision:** Retain v4c as a failed experiment. Use preserved v2's
++0.273237 ns SS setup baseline to investigate endpoint-local repair of
+its two FF hold failures and independent electrical loads. First investigate
+route preservation to limit parasitic changes in unaffected paths.
+
+**Alternatives considered:** The targeted NAND2B resize improves that
+gate's measured delay, but promotes another branch/read path to worst slack.
+Repeating the eight-buffer experiment without examining the new loads
+does not address the observed failure. Positive provisional slack is
+insufficient evidence to accept another candidate.
+
+**Consequences:** Both preserved baselines and the rollback commit remain
+available. V4c fails the extracted-only audit despite zero route DRC,
+antenna and critical connectivity errors. Full DRC/LVS/GDS is incomplete.
+No production RTL or timing constraint changed in this experiment.
+
+**Status:** v4c rejected; next physical repair requires fresh verification;
+Phase 7 remains open
+
+## 2026-10-09 — Preserve v2 placement and isolate endpoint hold repair
+
+**Context:** V2 has +0.273237 ns SS setup margin but two FF hold failures.
+The prior experiments discarded all signal wiring before rerouting; v4c
+regressed setup and electrical counts despite improving its target gate.
+
+**Decision:** Use the installed incremental `Odb.InsertECOBuffers` step to
+insert exactly two endpoint-local delay cells in the pre-filler v2 route.
+Keep original placements locked and reroute affected nets. Measure this
+hold-only candidate before applying separate electrical repair.
+
+**Alternatives considered:** Automatic broad hold repair added 30 buffers
+in v3. The two measured residual endpoints instead allow an isolated,
+identity-preserving repair with a much smaller affected routing set.
+
+**Consequences:** Preparation adds 33 um2 (696104 um2 before rerouting),
+retains all 5795 sequential cells and moves zero existing cells. Only two
+existing routes change, with two new nets. Connectivity/library-function
+checks and mapped top-level loading/event/timeout simulation pass. Fresh
+extracted setup/hold/electrical results remain pending.
+
+**Status:** within requested timing repair; incremental route in progress
+
+## 2026-10-09 — Endpoint hold repair passes; isolate electrical repair
+
+**Context:** The hold-only incremental route preserves SS setup margin
+at +0.273740 ns. FF/TT/SS setup is +10.863861/+7.625305/+0.273740 ns;
+hold is +0.011746/+0.207277/+0.573530 ns, all TNS/counts zero. SS slew
+remains 22 and capacitance remains five per corner. Area is 696104 um2.
+
+**Decision:** Retain this timing-passing route as the electrical repair
+baseline. Add six driver-local BUF-4 cells and five measured geographic
+load-group partitions using incremental routing with existing cells locked.
+
+**Alternatives considered:** Upsizing increases footprint and can require
+moving neighboring cells. Inserting nearby identity buffers instead allows
+existing placement preservation and accommodates masters without stronger
+variants. Cap branches require splitting their wire loads, not merely a
+stronger driver with the same capacitance limit.
+
+**Consequences:** Electrical preparation adds 159 um2 (696263 um2 before
+routing), retains all 5795 sequential cells, moves zero existing cells and
+incrementally reroutes 22 affected nets. Connectivity/functions pass. FF
+hold has only 11.746 ps remaining margin; fresh extraction must recheck it.
+Full signoff remains incomplete and no electrical pass is claimed yet.
+
+**Status:** hold candidate extracted PASS for setup/hold; electrical ECO
+under validation; Phase 7 remains open
+
+## 2026-10-09 — Preserve all-corner extracted closure and run signoff
+
+**Context:** The incremental electrical route passes FF/TT/SS setup
+(+11.125743/+7.622675/+0.265928 ns) and hold
+(+0.012662/+0.208263/+0.574717 ns), with zero timing TNS/counts, slew and
+capacitance violations at every corner. Area is 696263 um2 (77.1554%),
++192 um2 (+0.0276%) versus preserved v2. Route DRC, antenna, critical
+connectivity and filtered unannotated counts are zero.
+
+**Decision:** Archive this passing extraction as a rollback checkpoint
+and resume full GDS/DRC/LVS in a separate signoff run. Supplement absent
+resumed-run bbox/grid metrics using a read-only final-ODB grid probe,
+cryptographically bound to the audited database.
+
+**Alternatives considered:** A flow-complete result alone skips physical
+signoff in the extraction experiment. Importing metrics from another route
+is rejected; the probe can supply only grid/bbox measurements for the exact
+ODB, and cannot replace timing/electrical results.
+
+**Consequences:** Both the hold-only and electrical-passing routes are
+archived outside /tmp. All original placements and 5795 sequential cells
+are retained; mapped simulation/connectivity/functions pass. The preliminary
+physical audit passes, but full DRC/LVS and hosted reproduction are pending.
+The saved-route ECO is not yet integrated into the ordinary RTL-to-GDS flow.
+
+**Status:** local extracted timing/electrical PASS; full signoff running;
+Phase 7 remains open
