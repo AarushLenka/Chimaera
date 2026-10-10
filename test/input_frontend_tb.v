@@ -13,6 +13,12 @@ module input_frontend_tb;
   wire [7:0] loaded_sync_inputs;
   wire [7:0] loaded_rise_edges;
   wire [7:0] loaded_fall_edges;
+  wire [7:0] loaded_cell0_sync_inputs;
+  wire [7:0] loaded_cell0_rise_edges;
+  wire [7:0] loaded_cell0_fall_edges;
+  wire [7:0] loaded_cell1_sync_inputs;
+  wire [7:0] loaded_cell1_rise_edges;
+  wire [7:0] loaded_cell1_fall_edges;
   wire [7:0] execution_sync_inputs;
   wire [7:0] execution_rise_edges;
   wire [7:0] execution_fall_edges;
@@ -27,6 +33,12 @@ module input_frontend_tb;
       .loaded_sync_inputs    (loaded_sync_inputs),
       .loaded_rise_edges     (loaded_rise_edges),
       .loaded_fall_edges     (loaded_fall_edges),
+      .loaded_cell0_sync_inputs(loaded_cell0_sync_inputs),
+      .loaded_cell0_rise_edges (loaded_cell0_rise_edges),
+      .loaded_cell0_fall_edges (loaded_cell0_fall_edges),
+      .loaded_cell1_sync_inputs(loaded_cell1_sync_inputs),
+      .loaded_cell1_rise_edges (loaded_cell1_rise_edges),
+      .loaded_cell1_fall_edges (loaded_cell1_fall_edges),
       .execution_sync_inputs (execution_sync_inputs),
       .execution_rise_edges  (execution_rise_edges),
       .execution_fall_edges  (execution_fall_edges)
@@ -45,6 +57,12 @@ module input_frontend_tb;
           execution_sync_inputs !== expected_sync ||
           legacy_rise_edges !== expected_rise ||
           loaded_rise_edges !== expected_rise ||
+          loaded_cell0_sync_inputs !== expected_sync ||
+          loaded_cell0_rise_edges !== expected_rise ||
+          loaded_cell0_fall_edges !== expected_fall ||
+          loaded_cell1_sync_inputs !== expected_sync ||
+          loaded_cell1_rise_edges !== expected_rise ||
+          loaded_cell1_fall_edges !== expected_fall ||
           execution_rise_edges !== expected_rise ||
           legacy_fall_edges !== expected_fall ||
           loaded_fall_edges !== expected_fall ||

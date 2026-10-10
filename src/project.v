@@ -34,6 +34,12 @@ module tt_um_chimaera (
   wire [7:0] loaded_sync_inputs;
   wire [7:0] loaded_rise_edges;
   wire [7:0] loaded_fall_edges;
+  wire [7:0] loaded_cell0_sync_inputs;
+  wire [7:0] loaded_cell0_rise_edges;
+  wire [7:0] loaded_cell0_fall_edges;
+  wire [7:0] loaded_cell1_sync_inputs;
+  wire [7:0] loaded_cell1_rise_edges;
+  wire [7:0] loaded_cell1_fall_edges;
   wire [7:0] execution_sync_inputs;
   wire [7:0] execution_rise_edges;
   wire [7:0] execution_fall_edges;
@@ -148,6 +154,12 @@ module tt_um_chimaera (
       .loaded_sync_inputs    (loaded_sync_inputs),
       .loaded_rise_edges     (loaded_rise_edges),
       .loaded_fall_edges     (loaded_fall_edges),
+      .loaded_cell0_sync_inputs(loaded_cell0_sync_inputs),
+      .loaded_cell0_rise_edges (loaded_cell0_rise_edges),
+      .loaded_cell0_fall_edges (loaded_cell0_fall_edges),
+      .loaded_cell1_sync_inputs(loaded_cell1_sync_inputs),
+      .loaded_cell1_rise_edges (loaded_cell1_rise_edges),
+      .loaded_cell1_fall_edges (loaded_cell1_fall_edges),
       .execution_sync_inputs (execution_sync_inputs),
       .execution_rise_edges  (execution_rise_edges),
       .execution_fall_edges  (execution_fall_edges)
@@ -196,9 +208,15 @@ module tt_um_chimaera (
       .descriptor_decision (loaded_descriptor_decision),
       .descriptor_data     (loaded_descriptor_data),
       .descriptor_select_1 (loaded_descriptor_select_1),
-      .sync_inputs         (loaded_sync_inputs),
-      .rise_edges          (loaded_rise_edges),
-      .fall_edges          (loaded_fall_edges),
+      .sync_inputs_0       (loaded_cell0_sync_inputs),
+      .rise_edges_0        (loaded_cell0_rise_edges),
+      .fall_edges_0        (loaded_cell0_fall_edges),
+      .sync_inputs_1       (loaded_cell1_sync_inputs),
+      .rise_edges_1        (loaded_cell1_rise_edges),
+      .fall_edges_1        (loaded_cell1_fall_edges),
+      .contract_sync_inputs(loaded_sync_inputs),
+      .contract_rise_edges (loaded_rise_edges),
+      .contract_fall_edges (loaded_fall_edges),
       .fault_seed          (loaded_fault_seed),
       .mutation_config_0   (loaded_mutation_config_0),
       .mutation_config_1   (loaded_mutation_config_1),

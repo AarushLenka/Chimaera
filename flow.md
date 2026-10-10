@@ -1109,3 +1109,25 @@ checkout `d66cf179e7bc4d296362ab7e2e3b344dc3c4f665` in the temporary evidence
 directory and LibreLane 3.1.0.dev3, the hosted version. The production GDS
 workflow, top-level pins, clock, ABI and tile footprint are unchanged. Routed
 timing/electrical and complete signoff results remain pending.
+
+## 2026-10-10 — Verify same-cycle loaded-input fanout partition
+
+The fresh RTL candidate keeps the input-bank first synchronizer shared and adds
+two parallel registered second-stage views for the loaded reaction cells. The
+contract monitor continues to use the original view. All three views capture
+the same `sync_meta` value on the same clock edge, and each view has aligned
+previous-sample and rising/falling-edge registers; no pipeline stage or clock
+constraint was changed.
+
+`scripts/local-verify.sh` completed successfully after updating the runtime
+instantiations, replay generator, and equivalence testbench. The run passed all
+host/compiler tests, Phase 6 demos, input-front-end and program-runtime benches,
+260-cycle runtime equivalence, top-level serial/event/timeout tests, Phase 4
+smoke, Verilator lint, Yosys generic synthesis, topology, branch, and event
+checks. A focused Yosys synthesis also retained both view register banks and
+reported zero structural problems.
+
+`scripts/local-harden.sh` remains unrun locally because the IHP SG13C5L PDK and
+native LibreLane/OpenROAD/KLayout/Magic tools are unavailable in this workspace.
+The next gate is the exact hosted GDS workflow, which must report fresh
+per-corner setup/hold, slew/capacitance, DRC, LVS, and final artifact evidence.

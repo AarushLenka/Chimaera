@@ -114,6 +114,13 @@ Starting components:
   for every external input, to correctly handle asynchronous signals — this is
   also *why* the timing guarantee in §2 is phrased "after the synchronized event,"
   not "instantaneous").
+- The loaded runtime uses one shared first-stage sample and three parallel,
+  registered second-stage views: one for the contract monitor and one for each
+  loaded reaction cell. Each view has its own previous sample and edge detectors,
+  so the views remain cycle-aligned while the synchronized and edge buses do not
+  fan out across both reaction cones. All views capture the first-stage sample on
+  the same clock edge as the original second stage, so this is a physical fanout
+  partition with no added external-input latency or pipeline cycle.
 - Rising/falling-edge detectors.
 - Pin-pattern comparator (for masked-pattern wait conditions).
 - Per-pin inversion (cheap way to support polarity differences between

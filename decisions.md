@@ -1408,3 +1408,31 @@ The saved-route ECO is not yet integrated into the ordinary RTL-to-GDS flow.
 
 **Status:** local extracted timing/electrical PASS; full signoff running;
 Phase 7 remains open
+
+## 2026-10-10 — Partition loaded-runtime synchronized-input fanout in RTL
+
+**Context:** The latest hosted GDS run reproduced the official-template flow but
+failed slow-corner setup at -2.3564955 ns WNS with 81 violating paths. The prior
+local positive result came from a saved-route physical ECO (+0.265928 ns SS
+setup), which is not reproduced by a fresh RTL-to-GDS run. The failing hosted
+cone is rooted at the loaded input-bank synchronized/edge buses feeding both
+loaded reaction cells.
+
+**Decision:** Keep one shared first-stage synchronizer per input bank, then add
+two parallel registered second-stage views for the loaded reaction cells while
+retaining the base view for the contract monitor. Each view captures the same
+first-stage sample on the same clock edge and computes its own previous sample
+and edge signals. This partitions physical fanout without changing the ABI,
+event equations, CDC behavior, fixed latency, or external-input cycle timing.
+
+**Alternatives considered:** Adding a pipeline stage would change event latency;
+changing the clock or timing constraints would mask rather than repair the
+physical path; and replaying the saved ODB/buffer ECO would not make the ordinary
+hosted RTL flow reproducible. Those alternatives are rejected.
+
+**Consequences:** Full local functional, equivalence, lint, and generic
+synthesis/topology gates pass. The local IHP hardening command cannot run because
+the PDK/tools are not installed in this workspace, so hosted fresh P&R remains
+the acceptance test for the timing objective.
+
+**Status:** RTL candidate verified locally; exact hosted GDS validation pending
