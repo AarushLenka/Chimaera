@@ -1436,3 +1436,32 @@ the PDK/tools are not installed in this workspace, so hosted fresh P&R remains
 the acceptance test for the timing objective.
 
 **Status:** RTL candidate verified locally; exact hosted GDS validation pending
+
+## 2026-10-11 — Replace optimized-away loaded input views with structural consumer banks
+
+**Context:** Hosted GDS run `38058058912` for commit `13d38b9` reached final GDS,
+DRC, LVS, antenna, and hold checks but failed slow-corner setup at WNS
+`-5.904806 ns`, TNS `-199.942141 ns`, with 160 violations. The uploaded mapped
+netlist showed the added `sync_value_view_1/2` registers had been optimized into
+buffers from the original `sync_value` flop; the intended physical launch-point
+partition therefore did not exist.
+
+**Decision:** Split the loaded front end structurally into one shared
+`chimaera_input_sync_stage` and three separate, hierarchy-preserved
+`chimaera_input_consumer_bank` instances. The contract monitor, loaded reaction
+cell 0, and loaded reaction cell 1 now each receive a distinct second-stage
+register bank while capturing the same first-stage sample on the same edge.
+
+**Alternatives considered:** Keeping equivalent duplicate registers in one
+module is rejected because the hosted synthesis merged them. Independent full
+synchronizers per reaction cell are rejected because they would weaken the
+shared CDC sample alignment. Adding a pipeline stage, changing the 20 ns clock,
+or relaxing constraints remains rejected.
+
+**Consequences:** The RTL and test benches preserve the two-flop external-input
+latency, edge equations, ABI, and fixed scheduling. Local verification passes;
+focused generic synthesis reports distinct loaded consumer hierarchy with 16
+register cells per bank and zero structural problems. Hosted all-corner timing
+and signoff remain the acceptance gate.
+
+**Status:** structural RTL candidate verified locally; hosted GDS validation pending

@@ -1131,3 +1131,19 @@ reported zero structural problems.
 native LibreLane/OpenROAD/KLayout/Magic tools are unavailable in this workspace.
 The next gate is the exact hosted GDS workflow, which must report fresh
 per-corner setup/hold, slew/capacitance, DRC, LVS, and final artifact evidence.
+
+## 2026-10-11 — Hosted result invalidated the first loaded-view implementation
+
+The exact hosted GDS run for `13d38b9` was not timing-clean. It completed the
+physical flow and signoff artifacts, but slow-corner post-route setup failed at
+WNS `-5.904806 ns`, TNS `-199.942141 ns`, and 160 violations; hold, DRC, LVS,
+antenna, and power-grid checks were clean. The mapped netlist proved that the
+in-bank duplicate view registers were reduced to buffers, so that candidate did
+not implement the claimed physical partition.
+
+The replacement candidate uses one shared loaded first-stage sampler and three
+separate preserved consumer-bank instances. Local verification passes, and the
+generic synthesized hierarchy contains distinct `loaded_bank`,
+`loaded_cell0_bank`, and `loaded_cell1_bank` modules with their own second-stage
+registers. A fresh exact hosted GDS run is required; no timing improvement is
+claimed until its final per-corner reports are available.

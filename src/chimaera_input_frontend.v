@@ -9,10 +9,60 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-// Each consumer bank is a complete two-flop synchronizer plus its previous
-// synchronized sample.  The hierarchy boundary and keep attributes stop
-// synthesis from folding the physically separate banks back together.
+// The synchronizer is split into a first-stage sampler and a consumer bank.
+// The loaded runtime can therefore share one metastability-catching sample
+// while keeping its second-stage launch points physically separate.
 /* verilator lint_off DECLFILENAME */
+(* keep_hierarchy = "yes" *)
+module chimaera_input_sync_stage (
+    input  wire       clk,
+    input  wire       rst_n,
+    input  wire [7:0] async_inputs,
+    output wire [7:0] sync_meta
+);
+
+  (* keep = "true", dont_touch = "true" *) reg [7:0] sync_meta_reg;
+
+  always @(posedge clk) begin
+    if (!rst_n)
+      sync_meta_reg <= 8'hff;
+    else
+      sync_meta_reg <= async_inputs;
+  end
+
+  assign sync_meta = sync_meta_reg;
+
+endmodule
+
+(* keep_hierarchy = "yes" *)
+module chimaera_input_consumer_bank (
+    input  wire       clk,
+    input  wire       rst_n,
+    input  wire [7:0] sync_meta,
+    output wire [7:0] sync_inputs,
+    output wire [7:0] rise_edges,
+    output wire [7:0] fall_edges
+);
+
+  (* keep = "true", dont_touch = "true" *) reg [7:0] sync_value;
+  (* keep = "true", dont_touch = "true" *) reg [7:0] sync_previous;
+
+  always @(posedge clk) begin
+    if (!rst_n) begin
+      sync_value    <= 8'hff;
+      sync_previous <= 8'hff;
+    end else begin
+      sync_value    <= sync_meta;
+      sync_previous <= sync_value;
+    end
+  end
+
+  assign sync_inputs = sync_value;
+  assign rise_edges  = sync_value & ~sync_previous;
+  assign fall_edges  = ~sync_value & sync_previous;
+
+endmodule
+
 (* keep_hierarchy = "yes" *)
 module chimaera_input_bank (
     input  wire       clk,
@@ -20,58 +70,28 @@ module chimaera_input_bank (
     input  wire [7:0] async_inputs,
     output wire [7:0] sync_inputs,
     output wire [7:0] rise_edges,
-    output wire [7:0] fall_edges,
-    // The loaded runtime gets two physical second-stage views.  They capture
-    // the same shared first-stage sample, so they stay cycle-aligned while
-    // keeping each reaction cone's synchronized bus local after the flop.
-    output wire [7:0] sync_inputs_view_1,
-    output wire [7:0] rise_edges_view_1,
-    output wire [7:0] fall_edges_view_1,
-    output wire [7:0] sync_inputs_view_2,
-    output wire [7:0] rise_edges_view_2,
-    output wire [7:0] fall_edges_view_2
+    output wire [7:0] fall_edges
 );
 
-  (* keep = "true", dont_touch = "true" *) reg [7:0] sync_meta;
-  (* keep = "true", dont_touch = "true" *) reg [7:0] sync_value;
-  (* keep = "true", dont_touch = "true" *) reg [7:0] sync_previous;
-  (* keep = "true", dont_touch = "true" *) reg [7:0] sync_value_view_1;
-  (* keep = "true", dont_touch = "true" *) reg [7:0] sync_previous_view_1;
-  (* keep = "true", dont_touch = "true" *) reg [7:0] sync_value_view_2;
-  (* keep = "true", dont_touch = "true" *) reg [7:0] sync_previous_view_2;
+  wire [7:0] sync_meta;
 
-  always @(posedge clk) begin
-    if (!rst_n) begin
-      // UART and the other initial serial protocols are idle high.
-      sync_meta     <= 8'hff;
-      sync_value    <= 8'hff;
-      sync_previous <= 8'hff;
-      sync_value_view_1    <= 8'hff;
-      sync_previous_view_1 <= 8'hff;
-      sync_value_view_2    <= 8'hff;
-      sync_previous_view_2 <= 8'hff;
-    end else begin
-      sync_meta     <= async_inputs;
-      sync_value    <= sync_meta;
-      sync_previous <= sync_value;
-      // These are parallel second-stage synchronizer views, not pipeline
-      // stages: each captures the same sync_meta value as sync_value does.
-      sync_value_view_1    <= sync_meta;
-      sync_previous_view_1 <= sync_value_view_1;
-      sync_value_view_2    <= sync_meta;
-      sync_previous_view_2 <= sync_value_view_2;
-    end
-  end
+  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  chimaera_input_sync_stage stage1 (
+      .clk          (clk),
+      .rst_n        (rst_n),
+      .async_inputs (async_inputs),
+      .sync_meta    (sync_meta)
+  );
 
-  assign sync_inputs = sync_value;
-  assign rise_edges  = sync_value & ~sync_previous;
-  assign fall_edges  = ~sync_value & sync_previous;
-  assign sync_inputs_view_1 = sync_value_view_1;
-  assign rise_edges_view_1  = sync_value_view_1 & ~sync_previous_view_1;
-  assign fall_edges_view_1  = ~sync_value_view_1 & sync_previous_view_1;
-  assign sync_inputs_view_2 = sync_value_view_2;
-  assign rise_edges_view_2  = sync_value_view_2 & ~sync_previous_view_2;
-  assign fall_edges_view_2  = ~sync_value_view_2 & sync_previous_view_2;
+  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  chimaera_input_consumer_bank consumer (
+      .clk          (clk),
+      .rst_n        (rst_n),
+      .sync_meta    (sync_meta),
+      .sync_inputs  (sync_inputs),
+      .rise_edges   (rise_edges),
+      .fall_edges   (fall_edges)
+  );
 
 endmodule
 /* verilator lint_on DECLFILENAME */
@@ -81,9 +101,9 @@ module chimaera_input_frontend (
     input  wire       rst_n,
     input  wire [7:0] async_inputs,
 
-    // The original ports remain the legacy reaction-path interface.  Each
-    // additional bank has its own synchronizer and edge history so no
-    // second-stage bit is broadcast to all consumers.
+    // The original ports remain the legacy reaction-path interface.  The
+    // loaded runtime shares one first-stage sample, then uses three preserved
+    // consumer banks so no second-stage bus is broadcast across its cones.
     output wire [7:0] sync_inputs,
     output wire [7:0] rise_edges,
     output wire [7:0] fall_edges,
@@ -101,23 +121,10 @@ module chimaera_input_frontend (
     output wire [7:0] execution_fall_edges
 );
 
-  // Only the loaded bank uses the extra views. Keep explicit sinks on the
-  // other banks so lint sees every expanded bank port as intentionally wired.
-  wire [7:0] legacy_sync_inputs_view_1_unused;
-  wire [7:0] legacy_rise_edges_view_1_unused;
-  wire [7:0] legacy_fall_edges_view_1_unused;
-  wire [7:0] legacy_sync_inputs_view_2_unused;
-  wire [7:0] legacy_rise_edges_view_2_unused;
-  wire [7:0] legacy_fall_edges_view_2_unused;
-  wire [7:0] execution_sync_inputs_view_1_unused;
-  wire [7:0] execution_rise_edges_view_1_unused;
-  wire [7:0] execution_fall_edges_view_1_unused;
-  wire [7:0] execution_sync_inputs_view_2_unused;
-  wire [7:0] execution_rise_edges_view_2_unused;
-  wire [7:0] execution_fall_edges_view_2_unused;
+  wire [7:0] loaded_sync_meta;
 
-  // Keep each consumer bank as a separate hierarchy boundary so all three
-  // banks remain physically distinct while their logical signals stay aligned.
+  // Keep each consumer bank as a separate hierarchy boundary. The loaded
+  // first-stage output is shared, so all loaded views remain cycle-aligned.
   (* keep_hierarchy = "yes", dont_touch = "true" *)
   chimaera_input_bank legacy_bank (
       .clk          (clk),
@@ -125,29 +132,45 @@ module chimaera_input_frontend (
       .async_inputs (async_inputs),
       .sync_inputs  (sync_inputs),
       .rise_edges   (rise_edges),
-      .fall_edges   (fall_edges),
-      .sync_inputs_view_1 (legacy_sync_inputs_view_1_unused),
-      .rise_edges_view_1  (legacy_rise_edges_view_1_unused),
-      .fall_edges_view_1  (legacy_fall_edges_view_1_unused),
-      .sync_inputs_view_2 (legacy_sync_inputs_view_2_unused),
-      .rise_edges_view_2  (legacy_rise_edges_view_2_unused),
-      .fall_edges_view_2  (legacy_fall_edges_view_2_unused)
+      .fall_edges   (fall_edges)
   );
 
   (* keep_hierarchy = "yes", dont_touch = "true" *)
-  chimaera_input_bank loaded_bank (
+  chimaera_input_sync_stage loaded_stage1 (
       .clk          (clk),
       .rst_n        (rst_n),
       .async_inputs (async_inputs),
+      .sync_meta    (loaded_sync_meta)
+  );
+
+  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  chimaera_input_consumer_bank loaded_bank (
+      .clk          (clk),
+      .rst_n        (rst_n),
+      .sync_meta    (loaded_sync_meta),
       .sync_inputs  (loaded_sync_inputs),
       .rise_edges   (loaded_rise_edges),
-      .fall_edges   (loaded_fall_edges),
-      .sync_inputs_view_1 (loaded_cell0_sync_inputs),
-      .rise_edges_view_1  (loaded_cell0_rise_edges),
-      .fall_edges_view_1  (loaded_cell0_fall_edges),
-      .sync_inputs_view_2 (loaded_cell1_sync_inputs),
-      .rise_edges_view_2  (loaded_cell1_rise_edges),
-      .fall_edges_view_2  (loaded_cell1_fall_edges)
+      .fall_edges   (loaded_fall_edges)
+  );
+
+  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  chimaera_input_consumer_bank loaded_cell0_bank (
+      .clk          (clk),
+      .rst_n        (rst_n),
+      .sync_meta    (loaded_sync_meta),
+      .sync_inputs  (loaded_cell0_sync_inputs),
+      .rise_edges   (loaded_cell0_rise_edges),
+      .fall_edges   (loaded_cell0_fall_edges)
+  );
+
+  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  chimaera_input_consumer_bank loaded_cell1_bank (
+      .clk          (clk),
+      .rst_n        (rst_n),
+      .sync_meta    (loaded_sync_meta),
+      .sync_inputs  (loaded_cell1_sync_inputs),
+      .rise_edges   (loaded_cell1_rise_edges),
+      .fall_edges   (loaded_cell1_fall_edges)
   );
 
   (* keep_hierarchy = "yes", dont_touch = "true" *)
@@ -157,13 +180,7 @@ module chimaera_input_frontend (
       .async_inputs (async_inputs),
       .sync_inputs  (execution_sync_inputs),
       .rise_edges   (execution_rise_edges),
-      .fall_edges   (execution_fall_edges),
-      .sync_inputs_view_1 (execution_sync_inputs_view_1_unused),
-      .rise_edges_view_1  (execution_rise_edges_view_1_unused),
-      .fall_edges_view_1  (execution_fall_edges_view_1_unused),
-      .sync_inputs_view_2 (execution_sync_inputs_view_2_unused),
-      .rise_edges_view_2  (execution_rise_edges_view_2_unused),
-      .fall_edges_view_2  (execution_fall_edges_view_2_unused)
+      .fall_edges   (execution_fall_edges)
   );
 
 endmodule
