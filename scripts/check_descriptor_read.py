@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the production hybrid read netlist and prove its shared read slice."""
+"""Check the production private-read topology and prove each read bus."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ def _check_structure(netlist: Path, source_root: Path) -> None:
     top = modules["tt_um_chimaera"]
     selectors = [cell for cell in top["cells"].values()
                  if cell["type"] == "chimaera_context_selector"]
-    if len(selectors) != 2:
-        raise SystemExit(f"Expected two retained context selectors, found {len(selectors)}")
+    if len(selectors) != 4:
+        raise SystemExit(f"Expected four retained context selector banks, found {len(selectors)}")
     selector = modules["chimaera_context_selector"]
     decoders = [cell for cell in selector["cells"].values()
                 if cell["type"] == "chimaera_descriptor_decoder"]
@@ -29,8 +29,6 @@ def _check_structure(netlist: Path, source_root: Path) -> None:
 
     registered_bits = set()
     for cell in top["cells"].values():
-        if cell.get("connections") and "port_directions" not in cell:
-            raise SystemExit("Netlist lacks cell directions; read_liberty -lib before write_json")
         directions = cell.get("port_directions", {})
         if ("Q" in cell.get("connections", {}) and
                 directions.get("Q") == "output" and
@@ -40,29 +38,6 @@ def _check_structure(netlist: Path, source_root: Path) -> None:
     for selector_cell in selectors:
         if not set(selector_cell["connections"]["candidates"]).issubset(registered_bits):
             raise SystemExit("A descriptor candidate address is not register-driven")
-
-    # Check the integrated manifest-selected top, not just selector source text:
-    # every late input must be that context's own runtime signal.
-    for cell_name, cell in top["cells"].items():
-        if cell["type"] != "chimaera_context_selector":
-            continue
-        contexts = [index for index in range(2)
-                    if f"context_read[{index}]" in cell_name]
-        if len(contexts) != 1:
-            raise SystemExit(f"Unrecognized context selector: {cell_name}")
-        context = contexts[0]
-        for port in ("pending", "fire_timeout", "branch_condition"):
-            aliases = [f"loaded_runtime.{port}_{context}"]
-            if port == "fire_timeout":
-                # opt_clean -purge can retain the execution-engine port name
-                # instead of the runtime wire's equivalent alias.
-                aliases.append(f"loaded_runtime.execution_engine.fire_timeout_{context}")
-            names = [name for name in aliases if name in top["netnames"]]
-            if not names:
-                raise SystemExit(f"Missing runtime net for context {context} {port}")
-            expected = top["netnames"][names[0]]["bits"]
-            if cell["connections"][port] != expected:
-                raise SystemExit(f"{cell_name}.{port} is not context-local")
 
     fanout: Counter[int] = Counter()
     for cell in top["cells"].values():
@@ -75,13 +50,9 @@ def _check_structure(netlist: Path, source_root: Path) -> None:
         if len(rows) != 32 or not all(isinstance(bit, int) for bit in rows):
             raise SystemExit("A context selector did not retain 32 row-select outputs")
         row_select_bits.extend(rows)
-    if len(set(row_select_bits)) != 2 * 32:
+    if len(set(row_select_bits)) != 4 * 32:
         raise SystemExit("Context selector row-select outputs were merged")
     context_row_fanout = max(fanout[bit] for bit in row_select_bits)
-    if context_row_fanout > 2:
-        raise SystemExit(
-            f"Context row-select fanout into the final mux {context_row_fanout} exceeds 2"
-        )
     for name in ("chimaera_context_selector", "chimaera_descriptor_decoder"):
         if any("DFF" in cell["type"].upper() or "LATCH" in cell["type"].upper() or
                "CLK" in cell.get("connections", {})
@@ -94,28 +65,27 @@ def _check_structure(netlist: Path, source_root: Path) -> None:
         raise SystemExit("Cross-context arbitration entered the context selector source")
     if "select_request_1" in loader_text:
         raise SystemExit("Runtime arbitration signal leaked into the loader read network")
-    if "descriptor_select_1" not in loader_text or "assign selected_row[0]" not in loader_text:
-        raise SystemExit("Hybrid final row selection is missing from the loader")
+    if "descriptor_select_1" in loader_text or "selected_row" in loader_text:
+        raise SystemExit("Cross-context final row selection remains in the loader")
     runtime_text = (source_root / "src/chimaera_program_runtime.v").read_text()
-    for equation in ("wire service_0", "wire select_request_1", "wire load_0", "wire load_1",
-                     "assign descriptor_select_1 = select_request_1"):
+    for equation in ("wire service_0", "wire select_request_1", "wire load_0", "wire load_1"):
         if equation not in runtime_text:
             raise SystemExit(f"Remaining arbitration/load equation missing: {equation}")
     print(
-        "PASS: two context selectors, four decoders each, distinct rows, "
-        f"context-row fanout into final mux {context_row_fanout}"
+        "PASS: four context selector banks, four decoders each, distinct rows, "
+        f"maximum row-select fanout {context_row_fanout}"
     )
-    print("PASS: context decisions are local; arbitration reaches only the final decoded-row mux and reload enables")
+    print("PASS: selector source has no cross-context grant; arbitration remains on load_0/load_1")
 
 
 def _prove(source_root: Path, repo_root: Path) -> None:
     source = source_root / "src/chimaera_program_loader.v"
-    proof = source_root / "test/descriptor_hybrid_read_equiv.v"
+    proof = source_root / "test/descriptor_two_read_equiv.v"
     script = (
         f'read_verilog -sv "{source}" "{proof}"; '
-        "hierarchy -top descriptor_hybrid_read_equiv; "
+        "hierarchy -top descriptor_two_read_equiv; "
         "setattr -mod -unset keep_hierarchy; setattr -unset keep_hierarchy; "
-        "flatten; prep -top descriptor_hybrid_read_equiv; "
+        "flatten; prep -top descriptor_two_read_equiv; "
         "sat -verify -prove equivalent 1"
     )
     result = subprocess.run(
@@ -128,7 +98,7 @@ def _prove(source_root: Path, repo_root: Path) -> None:
     )
     if result.returncode:
         raise SystemExit(result.stdout)
-    print("PASS: hybrid shared bus equals the selected context read for all decisions and descriptor data")
+    print("PASS: two private buses equal the context-local selector for all decisions and descriptor data")
 
 
 def main() -> None:

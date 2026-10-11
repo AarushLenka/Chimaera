@@ -64,15 +64,23 @@ its benefit still requires fresh routed/extracted validation.
 ## 3. Shared execution engine
 
 A shared execution block serves both reaction cells whenever a cell needs
-bookkeeping work between firing and its next state being ready. Each context
-has a local combinational successor decoder over the shared memory. The two
-decoded one-hot rows feed one shared final descriptor read bus; pending-first
-arbitration selects between those already-decoded rows and controls the reload
-enables. Simultaneous cells still commit their locally predecoded actions on
-the same fixed-latency edge; one descriptor reload occurs on that edge and the
-deferred reload is guaranteed the following edge, before any new request. Thus
-rearm latency is at most two inclusive cycles without making reaction latency
-contention-dependent.
+bookkeeping work between firing and its next state being ready. The descriptor
+memory and write port remain shared, but each context now has a private
+combinational successor read bus: two retained selector banks feed the four
+32-bit slices of that context's 128-bit descriptor. Pending-first arbitration
+controls only the reload enables; it never selects between context read data.
+This removes the cross-context grant from the descriptor data cone while
+preserving the fixed 256-bit runtime interface. Simultaneous cells still
+commit their locally predecoded actions on the same fixed-latency edge; one
+descriptor reload occurs on that edge and the deferred reload is guaranteed
+the following edge, before any new request. Thus rearm latency is at most two
+inclusive cycles without making reaction latency contention-dependent.
+
+The private read buses intentionally trade duplicated combinational read logic
+and area for a shorter arbitration-sensitive timing cone. The local
+equivalence proof covers both context buses for all candidate addresses,
+decisions, and descriptor contents; fresh routed timing and utilization are
+still required before this trade can be accepted physically.
 
 A deferred cell is unarmed during its reload edge, so an external event arriving
 on that edge is not captured. Until the DSL can declare and prove protocol timing

@@ -1172,3 +1172,25 @@ physical flow to add repair buffers or resize cells at their fanout paths.
 `loaded_bank`, `loaded_cell0_bank`, and `loaded_cell1_bank` instances. A hosted
 GDS run is required to determine whether the change closes the actual
 per-corner setup/slew/capacitance violations.
+
+## 2026-10-11 — Remove cross-context arbitration from descriptor reads
+
+The supplied `GDS_logs_aaf1073` artifact reaches IR-drop and Magic DRC with
+clean PDN/connectivity evidence, but stops on deferred timing/electrical
+checks. Its slow corner reports setup WNS `-3.213945 ns`, TNS
+`-82.823692 ns`, 76 setup violations, 396 maximum-slew violations, and six
+maximum-capacitance violations. The worst setup path starts at
+`input_frontend.loaded_cell0_bank` and ends in loaded runtime control through
+the event-matcher and descriptor/rearm cone. The repeated VSRC warning is not
+the cause: the same artifact reports zero power-grid violations and IR-drop
+below `0.03%`.
+
+The production loader therefore replaces the hybrid shared final descriptor
+bus with two private 128-bit context read buses. Each bus retains two local
+selector banks, while the shared 32 × 128-bit descriptor storage and write
+port remain unchanged. Runtime arbitration still grants at most one reload
+per edge and the pending-first schedule is unchanged; only the descriptor data
+path is no longer selected by the cross-context grant. The local gate passes
+host/compiler tests, RTL benches, runtime equivalence, lint, generic Yosys,
+and topology/SAT checks. The duplicated read logic may increase area, so an
+exact hosted GDS rerun must decide whether this is a viable physical repair.

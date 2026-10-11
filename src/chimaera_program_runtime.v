@@ -1,9 +1,8 @@
 /*
  * Two reaction cells executing compiler-loaded 128-bit descriptors.
  *
- * Each context has a local combinational candidate decoder. A shallow final
- * row choice feeds one shared descriptor read bus; the pending-first arbiter
- * selects that row choice and still grants at most one reload per edge.
+ * Each context has a private combinational descriptor read bus. The
+ * pending-first arbiter controls only reload enables, never descriptor data.
  * Simultaneous cell fires still commit both predecoded actions immediately;
  * one cell rearms on that edge and the other is guaranteed service on the
  * following edge, ahead of new requests. The compiler budgets a two-cycle
@@ -28,16 +27,11 @@ module `CHIMAERA_RUNTIME_MODULE (
     input  wire [4:0]   context_entry_1,
 
     output wire [39:0]  descriptor_candidates,
-    // Per-context read decisions only: branch, timeout, pending. The
-    // pending-first grant exits separately as descriptor_select_1 and controls
-    // only the shallow final row choice after both context decoders.
+    // Per-context read decisions only: branch, timeout, pending. Arbitration
+    // stays local to the reload enables and does not enter descriptor reads.
     output wire [5:0]   descriptor_decision,
-    // The loader presents one shared final 128-bit bus in both halves of this
-    // legacy 256-bit interface. At most one reload is serviced per edge.
+    // Context 0 is in [127:0], context 1 in [255:128].
     input  wire [255:0] descriptor_data,
-    // Hybrid read topology: the shared final bus chooses context 1 only when
-    // the pending-first arbiter grants context 1's reload.
-    output wire         descriptor_select_1,
 
     input  wire [7:0]   sync_inputs_0,
     input  wire [7:0]   rise_edges_0,
@@ -134,11 +128,9 @@ module `CHIMAERA_RUNTIME_MODULE (
   wire service_1 = running && select_request_1;
   wire load_0 = service_0;
   wire load_1 = service_1;
-  assign descriptor_select_1 = select_request_1;
-
   // These addresses come only from registered control/pending state. Each
   // context's read network decodes its four candidates before event matching
-  // finishes; the final grant selects only the already-decoded row vector.
+  // finishes; cross-context arbitration never selects descriptor data.
   assign descriptor_candidates = {
       pending_state_1, active_control_1[14:10],
       active_control_1[9:5], active_control_1[4:0],

@@ -1510,3 +1510,34 @@ physical-repair candidate, not yet a closure claim.
 
 **Status:** candidate implemented and locally verified; exact hosted GDS
 validation pending
+
+## 2026-10-11 — Make descriptor reads private to each execution context
+
+**Context:** The latest supplied hosted artifact `GDS_logs_aaf1073` has clean
+PDN, IR-drop, route DRC, antenna, and Magic DRC evidence, but its slow corner
+still reports setup WNS `-3.213945 ns`, TNS `-82.823692 ns`, 76 setup
+violations, 396 slew violations, and six capacitance violations. The worst
+path runs from the loaded cell-0 input bank through event matching and the
+descriptor/rearm cone. The existing hybrid read path lets the pending-first
+cross-context grant select the shared final descriptor bus, so that grant is
+inside the late data cone.
+
+**Decision:** Give each context a private 128-bit combinational descriptor
+read bus. Retain the shared 32 × 128-bit memory and write port, duplicate the
+context selector banks as needed for the four 32-bit read slices, and leave
+pending-first arbitration controlling only `load_0`/`load_1`. Preserve the
+descriptor ABI, same-edge action behavior, fixed latency, and two-cycle
+rearm schedule.
+
+**Alternatives considered:** Adding a pipeline stage, changing the 20 ns
+clock, relaxing corner checkers, or adding a guessed `vsrc.loc` would alter or
+mask the physical contract. Reusing the hybrid shared bus leaves the observed
+cross-context late grant in place. Those alternatives are rejected.
+
+**Consequences:** The local functional/equivalence, lint, generic synthesis,
+and topology gates pass. The private buses duplicate combinational read logic
+and may increase area or routing pressure; exact hosted GDS setup, slew,
+capacitance, and signoff evidence remain mandatory.
+
+**Status:** RTL candidate implemented and locally verified; hosted physical
+validation pending
