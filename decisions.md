@@ -1465,3 +1465,48 @@ register cells per bank and zero structural problems. Hosted all-corner timing
 and signoff remain the acceptance gate.
 
 **Status:** structural RTL candidate verified locally; hosted GDS validation pending
+
+## 2026-10-11 — Reject VSRC and ABC warnings as the GDS failure cause
+
+**Context:** The supplied `9801429` excerpt reports deferred errors for all
+three PNR corners but omits the checker name. The existing full IHP run for
+`13d38b9` uses the same Tiny Tapeout power setup and emits the same
+`VSRC_LOC_FILES` warning and ABC driving-cell messages. Its VPWR/VGND grids are
+connected, its power-grid violation count is zero, and its final deferred
+errors explicitly identify setup, maximum-slew, and maximum-capacitance
+violations.
+
+**Decision:** Do not add a guessed `vsrc.loc`, alter VPWR/VGND definitions, or
+disable corner checkers. `VSRC_LOC_FILES` is an IR-drop source-location input,
+not evidence of a disconnected PDN in this block. The next repair must use the
+latest supplied checker section or per-corner metrics to target the actual
+setup/slew/capacitance failures.
+
+**Consequences:** No source or flow configuration was changed. The current
+RTL candidate still passes local functional, lint, equivalence, topology, and
+generic synthesis gates; hosted physical closure remains unverified.
+
+**Status:** PDN/ABC hypotheses rejected by artifact evidence; exact `9801429`
+checker metrics remain the acceptance input for the next physical repair
+
+## 2026-10-11 — Allow physical repair inside preserved input-bank boundaries
+
+**Context:** The structural `9801429` candidate preserves the loaded
+second-stage banks, but its hierarchy instances were also marked
+`dont_touch`. That can prevent the physical flow from inserting legal repair
+buffers or resizing around the very fanout boundaries introduced to address
+the failing path.
+
+**Decision:** Retain `keep_hierarchy` on every input-bank instance and retain
+`keep`/`dont_touch` on the synchronizer state registers, but remove
+instance-level `dont_touch`. This preserves separate logical launch banks and
+CDC state while allowing LibreLane/OpenROAD timing and electrical repair.
+
+**Consequences:** Local simulation, lint, generic synthesis, topology, and
+equivalence gates pass, and the mapped netlist still contains distinct
+`loaded_bank`, `loaded_cell0_bank`, and `loaded_cell1_bank` instances. Hosted
+per-corner setup/slew/capacitance metrics are still required; this is a
+physical-repair candidate, not yet a closure claim.
+
+**Status:** candidate implemented and locally verified; exact hosted GDS
+validation pending

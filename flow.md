@@ -1147,3 +1147,28 @@ generic synthesized hierarchy contains distinct `loaded_bank`,
 `loaded_cell0_bank`, and `loaded_cell1_bank` modules with their own second-stage
 registers. A fresh exact hosted GDS run is required; no timing improvement is
 claimed until its final per-corner reports are available.
+
+## 2026-10-11 — GDS log triage: VSRC warning is not the fatal error
+
+The supplied `9801429` tail lists all three corners but does not include the
+deferred-checker label. The retained full `13d38b9` log shows the same
+`VSRC_LOC_FILES` warning followed by successful VPWR/VGND connectivity and a
+zero power-grid violation metric. The same run's final deferred error names
+setup, maximum-slew, and maximum-capacitance violations; its ABC driving-cell
+messages occur during synthesis and do not stop the flow.
+
+Therefore the next GDS repair must be driven by the `9801429` setup/slew/cap
+metrics and violating endpoints. Adding a guessed source-location file or
+relaxing the checker corners would hide the physical failure rather than fix
+it. No RTL/config change is accepted from this triage alone.
+
+## 2026-10-11 — Restore physical repair freedom at input-bank boundaries
+
+The next candidate keeps `keep_hierarchy` and the state-register preservation
+attributes, but removes `dont_touch` from the input-bank instances. This keeps
+the three loaded consumer banks structurally distinct while allowing the
+physical flow to add repair buffers or resize cells at their fanout paths.
+`scripts/local-verify.sh` passes, and the generic netlist retains distinct
+`loaded_bank`, `loaded_cell0_bank`, and `loaded_cell1_bank` instances. A hosted
+GDS run is required to determine whether the change closes the actual
+per-corner setup/slew/capacitance violations.

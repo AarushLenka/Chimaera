@@ -75,7 +75,9 @@ module chimaera_input_bank (
 
   wire [7:0] sync_meta;
 
-  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  // Preserve the bank boundary, but leave its mapped cells/net loading
+  // available to physical timing and electrical repair.
+  (* keep_hierarchy = "yes" *)
   chimaera_input_sync_stage stage1 (
       .clk          (clk),
       .rst_n        (rst_n),
@@ -83,7 +85,7 @@ module chimaera_input_bank (
       .sync_meta    (sync_meta)
   );
 
-  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  (* keep_hierarchy = "yes" *)
   chimaera_input_consumer_bank consumer (
       .clk          (clk),
       .rst_n        (rst_n),
@@ -125,7 +127,7 @@ module chimaera_input_frontend (
 
   // Keep each consumer bank as a separate hierarchy boundary. The loaded
   // first-stage output is shared, so all loaded views remain cycle-aligned.
-  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  (* keep_hierarchy = "yes" *)
   chimaera_input_bank legacy_bank (
       .clk          (clk),
       .rst_n        (rst_n),
@@ -135,7 +137,7 @@ module chimaera_input_frontend (
       .fall_edges   (fall_edges)
   );
 
-  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  (* keep_hierarchy = "yes" *)
   chimaera_input_sync_stage loaded_stage1 (
       .clk          (clk),
       .rst_n        (rst_n),
@@ -143,7 +145,7 @@ module chimaera_input_frontend (
       .sync_meta    (loaded_sync_meta)
   );
 
-  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  (* keep_hierarchy = "yes" *)
   chimaera_input_consumer_bank loaded_bank (
       .clk          (clk),
       .rst_n        (rst_n),
@@ -153,7 +155,7 @@ module chimaera_input_frontend (
       .fall_edges   (loaded_fall_edges)
   );
 
-  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  (* keep_hierarchy = "yes" *)
   chimaera_input_consumer_bank loaded_cell0_bank (
       .clk          (clk),
       .rst_n        (rst_n),
@@ -163,7 +165,7 @@ module chimaera_input_frontend (
       .fall_edges   (loaded_cell0_fall_edges)
   );
 
-  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  (* keep_hierarchy = "yes" *)
   chimaera_input_consumer_bank loaded_cell1_bank (
       .clk          (clk),
       .rst_n        (rst_n),
@@ -173,7 +175,7 @@ module chimaera_input_frontend (
       .fall_edges   (loaded_cell1_fall_edges)
   );
 
-  (* keep_hierarchy = "yes", dont_touch = "true" *)
+  (* keep_hierarchy = "yes" *)
   chimaera_input_bank execution_bank (
       .clk          (clk),
       .rst_n        (rst_n),
